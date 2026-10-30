@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>クラフト(仮)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="hud">
+  <div id="hint"></div>
+  <div id="cross"><i></i><i></i></div>
+  <div id="debug" hidden></div>
+  <div id="resume" hidden>クリックで操作を再開</div>
+  <div id="bottom">
+    <div id="itemname"></div>
+    <div id="hearts"></div>
+    <div id="hotbar"></div>
+  </div>
+</div>
+
+<div id="shade" hidden></div>
+<div id="panel-menu" class="panel wide" hidden></div>
+<div id="panel-inventory" class="panel" hidden></div>
+<div id="panel-book" class="panel book" hidden></div>
+
+<div id="fatal" hidden>3Dの部品(three.js)を読み込めませんでした。ネットワークを確認して、再読み込みしてください。</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
