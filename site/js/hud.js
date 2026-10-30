@@ -42,7 +42,7 @@ export function createHud({ settings, onSettings, onEnter, onClose }) {
   const inv = new Array(36).fill(null);   // 0〜8がホットバー
   inv[0] = "bow";
   inv[1] = "book";
-  let sel = 0, hp = 20, nameTimer = 0, entered = false;
+  let sel = 0, hp = 20, nameTimer = 0, entered = false, updateVer = null;
 
   // ----- ハート(体力は0〜20。1つのハートが2) -----
   const heartEls = [];
@@ -112,11 +112,16 @@ export function createHud({ settings, onSettings, onEnter, onClose }) {
   // ----- メニュー -----
   function renderMenu() {
     const log = CHANGELOG.map((c) => `<li><b>${esc(c.at)}</b> v${esc(c.version)}<br>${esc(c.summary)}</li>`).join("");
+    const notice = updateVer
+      ? `<div class="notice">新しいバージョン (v${esc(updateVer)}) があります。再読み込みすると、新しくなります。<button class="mcbtn" id="btn-reload">再読み込み</button></div>`
+      : "";
     $("panel-menu").innerHTML = `
       <h1>クラフト(仮)</h1>
       <p class="ver">バージョン ${esc(VERSION)}</p>
+      ${notice}
       <button class="mcbtn big" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
       <h2>設定</h2>
+      <label>ニックネーム <input type="text" id="set-name" maxlength="12" placeholder="ななし" value="${esc(settings.name || "")}"></label>
       <label>視野角 <input type="range" id="set-fov" min="50" max="110" step="1" value="${settings.fov}"><span id="set-fov-v">${settings.fov}</span></label>
       <label>マウス感度 <input type="range" id="set-sens" min="1" max="10" step="0.5" value="${settings.sens}"><span id="set-sens-v">${settings.sens}</span></label>
       <h2>操作</h2>
@@ -137,6 +142,8 @@ export function createHud({ settings, onSettings, onEnter, onClose }) {
     };
     bind("set-fov", "fov");
     bind("set-sens", "sens");
+    $("set-name").oninput = (e) => { settings.name = e.target.value; onSettings(settings); };
+    if (updateVer) $("btn-reload").onclick = () => location.reload();
   }
 
   // ----- パネルの切り替え -----
@@ -160,6 +167,22 @@ export function createHud({ settings, onSettings, onEnter, onClose }) {
     selectedItem: () => inv[sel],
     show,
     setResume: (on) => { $("resume").hidden = !on; },
+    // 右上の「オンライン」表示。lines の先頭が見出し、"*" で始まる行は自分
+    setOnline: (lines) => {
+      const el = $("online");
+      el.textContent = "";
+      for (const l of lines) {
+        const d = document.createElement("div");
+        if (l.startsWith("*")) { d.className = "me"; d.textContent = l.slice(1); } else d.textContent = l;
+        el.appendChild(d);
+      }
+    },
+    // サーバーが新しいバージョンになっている(古い画面で遊んでいる)ときのお知らせ
+    setUpdate: (v) => {
+      updateVer = v;
+      $("update").hidden = false;
+      $("update").textContent = `新しいバージョン (v${v}) があります。Escでメニューを開いて、再読み込みしてください`;
+    },
     toggleDebug: () => { $("debug").hidden = !$("debug").hidden; },
     setDebug: (text) => { if (!$("debug").hidden) $("debug").textContent = text; },
   };
