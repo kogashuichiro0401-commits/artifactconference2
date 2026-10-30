@@ -3,10 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>クラフト(仮)</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<title>artifact学会。 3D</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,6 +11,7 @@
 
 <div id="hud">
   <div id="hint"></div>
+  <div id="say"></div>
   <div id="cross"><i></i><i></i></div>
   <div id="debug" hidden></div>
   <div id="online"></div>
@@ -27,9 +25,10 @@
 </div>
 
 <div id="shade" hidden></div>
+<div id="panel-login" class="panel wide" hidden></div>
 <div id="panel-menu" class="panel wide" hidden></div>
 <div id="panel-inventory" class="panel" hidden></div>
-<div id="panel-book" class="panel book" hidden></div>
+<div id="panel-book" class="panel" hidden></div>
 
 <div id="fatal" hidden>3Dの部品(three.js)を読み込めませんでした。ネットワークを確認して、再読み込みしてください。</div>
 

@@ -19,30 +19,27 @@ function heartSVG(color, highlight) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-const HINT = "<b>WASD</b>=移動　<b>Space</b>=ジャンプ(2回=飛行、飛行中 Space↑ Shift↓)　<b>Wを2回</b>=ダッシュ　<b>Shift</b>=しゃがみ<br>" +
-  "<b>マウス</b>=視点　<b>1〜9・ホイール</b>=持ち物の切り替え　<b>E</b>=持ち物　<b>Esc</b>=メニュー";
+const HINT = "<b>WASD</b>=移動　<b>Space</b>=ジャンプ(2回=飛行、飛行中 Space↑ Shift↓)　<b>W/Sを2回</b>=ダッシュ　<b>Shift</b>=しゃがみ<br>" +
+  "落下中に<b>Space</b>=エリトラ(左クリック=ロケット花火)　<b>F5</b>=視点　<b>ホイール</b>=ズーム　<b>E</b>=持ち物　<b>Esc</b>=メニュー";
 
 const BOOK = `
   <h2>使い方の本</h2>
   <ul>
-    <li><b>WASD</b>…あるく</li>
-    <li><b>Space</b>…ジャンプ。すばやく2回押すと、空を飛べる</li>
-    <li>飛んでいる間は、<b>Space</b>で上、<b>Shift</b>で下</li>
-    <li><b>Wを2回</b>…ダッシュ</li>
-    <li><b>Shift</b>…しゃがむ</li>
-    <li><b>マウス</b>…見る方向を変える。中央の十字が、さしている場所</li>
-    <li><b>1〜9・ホイール</b>…手に持つものを変える</li>
-    <li><b>E</b>…持ち物を開く</li>
-    <li><b>Esc</b>…メニュー</li>
-  </ul>
-  <p style="font-size:13px">この世界は、まだ作っている途中です。</p>`;
+    <li><b>WASD</b>…あるく。<b>Space</b>…ジャンプ。すばやく2回押すと、空を飛べる(飛行中は Space で上、Shift で下)</li>
+    <li><b>WかSを2回</b>…ダッシュ。<b>Shift</b>…しゃがむ</li>
+    <li>落下している間に <b>Space</b>…エリトラが開いて、滑空できる。急降下で加速、上向きで減速。もう一度 Space で閉じる</li>
+    <li>滑空中の<b>左クリック</b>…ロケット花火で加速する</li>
+    <li><b>マウス</b>…見る方向。<b>ホイール</b>…ズーム。<b>F5</b>…視点の切り替え(一人称/後ろ/前)</li>
+    <li><b>1〜9</b>…手に持つものを変える。<b>E</b>…持ち物。<b>Esc</b>…メニュー</li>
+    <li>メーターパネルの3つの丸い画面に、artifact学会。の機能が入っています(真ん中=ダッシュボード、右=掲示板)</li>
+  </ul>`;
 
-export function createHud({ settings, onSettings, onEnter, onClose }) {
+export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onLogout, onRespawn }) {
   const $ = (id) => document.getElementById(id);
   const inv = new Array(36).fill(null);   // 0〜8がホットバー
   inv[0] = "bow";
   inv[1] = "book";
-  let sel = 0, hp = 20, nameTimer = 0, entered = false, updateVer = null;
+  let sel = 0, hp = 20, nameTimer = 0, entered = false, updateVer = null, user = null, sayTimer = 0;
 
   // ----- ハート(体力は0〜20。1つのハートが2) -----
   const heartEls = [];
@@ -101,38 +98,65 @@ export function createHud({ settings, onSettings, onEnter, onClose }) {
     for (let i = 0; i < 9; i++) bar += slot(i);
     $("panel-inventory").innerHTML =
       `<h2>持ち物</h2><div class="grid">${main}</div><div class="grid">${bar}</div>` +
-      `<button class="mcbtn close" id="btn-inv-close">とじる (E)</button>`;
+      `<button class="pill block" id="btn-inv-close">とじる (E)</button>`;
     $("btn-inv-close").onclick = onClose;
   }
 
   // ----- 本 -----
-  $("panel-book").innerHTML = BOOK + `<button class="mcbtn close" id="btn-book-close">とじる</button>`;
+  $("panel-book").innerHTML = BOOK + `<button class="pill block" id="btn-book-close">とじる</button>`;
   $("btn-book-close").onclick = onClose;
+
+  // ----- ログイン -----
+  const brand = (sub) => `<div class="brand"><span>artifact学会<b>。</b></span><small>${esc(sub)}</small></div>`;
+  function renderLogin(msg) {
+    $("panel-login").innerHTML = `
+      ${brand("3D")}
+      <p class="muted">artifact学会。のアカウントでログインしてください。(アカウントがない人は入れません)</p>
+      ${msg ? `<div class="err">${esc(msg)}</div>` : ""}
+      <form id="login-form" autocomplete="on">
+        <label class="field"><span>チャンネルID</span><input type="text" id="li-user" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+        <label class="field"><span>パスワード</span><input type="password" id="li-pass" autocomplete="current-password"></label>
+        <button class="pill primary block" id="li-go" type="submit">ログイン</button>
+      </form>`;
+    const form = $("login-form");
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $("li-go"); btn.disabled = true; btn.textContent = "確認中…";
+      const r = await onLogin($("li-user").value, $("li-pass").value);
+      if (r && r.error) renderLogin(r.error);
+    };
+    $("li-pass").onkeydown = (e) => e.stopPropagation();
+    $("li-user").onkeydown = (e) => e.stopPropagation();
+  }
 
   // ----- メニュー -----
   function renderMenu() {
     const log = CHANGELOG.map((c) => `<li><b>${esc(c.at)}</b> v${esc(c.version)}<br>${esc(c.summary)}</li>`).join("");
     const notice = updateVer
-      ? `<div class="notice">新しいバージョン (v${esc(updateVer)}) があります。再読み込みすると、新しくなります。<button class="mcbtn" id="btn-reload">再読み込み</button></div>`
+      ? `<div class="notice">新しいバージョン (v${esc(updateVer)}) があります。再読み込みすると新しくなります。<button class="pill primary block" id="btn-reload">再読み込み</button></div>`
       : "";
+    const nm = user ? user.displayName || user.username || "" : "";
+    const av = user && user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(nm.slice(0, 1));
     $("panel-menu").innerHTML = `
-      <h1>クラフト(仮)</h1>
-      <p class="ver">バージョン ${esc(VERSION)}</p>
+      ${brand("v" + VERSION)}
       ${notice}
-      <button class="mcbtn big" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
+      <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}</span><button class="pill" id="btn-logout">ログアウト</button></div>
+      <button class="pill primary block" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
+      <button class="pill block" id="btn-respawn">ダッシュボードの中央にもどる (R)</button>
       <h2>設定</h2>
-      <label>ニックネーム <input type="text" id="set-name" maxlength="12" placeholder="ななし" value="${esc(settings.name || "")}"></label>
       <label>視野角 <input type="range" id="set-fov" min="50" max="110" step="1" value="${settings.fov}"><span id="set-fov-v">${settings.fov}</span></label>
       <label>マウス感度 <input type="range" id="set-sens" min="1" max="10" step="0.5" value="${settings.sens}"><span id="set-sens-v">${settings.sens}</span></label>
       <h2>操作</h2>
       <ul>
-        <li>WASD=移動　Space=ジャンプ(2回=飛行、飛行中 Space↑ Shift↓)</li>
-        <li>Wを2回=ダッシュ　Shift=しゃがみ　マウス=視点</li>
-        <li>1〜9・ホイール=持ち物の切り替え　E=持ち物　F3=座標表示　Esc=メニュー</li>
+        <li>WASD=移動　Space=ジャンプ(2回=飛行、飛行中 Space↑ Shift↓)　W/Sを2回=ダッシュ　Shift=しゃがみ</li>
+        <li>落下中に Space=エリトラ(もう一度で終了)、滑空中の左クリック=ロケット花火</li>
+        <li>F5=視点　ホイール=ズーム　1〜9=持ち物　E=持ち物の画面　F3=座標表示　Esc=メニュー</li>
       </ul>
       <h2>更新履歴</h2>
       <ul class="log">${log}</ul>`;
     $("btn-enter").onclick = () => { entered = true; onEnter(); };
+    $("btn-logout").onclick = () => onLogout();
+    $("btn-respawn").onclick = () => { onRespawn(); onEnter(); };
     const bind = (id, key) => {
       $(id).oninput = (e) => {
         settings[key] = +e.target.value;
@@ -142,21 +166,22 @@ export function createHud({ settings, onSettings, onEnter, onClose }) {
     };
     bind("set-fov", "fov");
     bind("set-sens", "sens");
-    $("set-name").oninput = (e) => { settings.name = e.target.value; onSettings(settings); };
     if (updateVer) $("btn-reload").onclick = () => location.reload();
   }
 
   // ----- パネルの切り替え -----
   function show(name) {
+    if (name === "login") renderLogin();
     if (name === "menu") renderMenu();
     if (name === "inventory") renderInventory();
-    for (const n of ["menu", "inventory", "book"]) $("panel-" + n).hidden = n !== name;
+    for (const n of ["login", "menu", "inventory", "book"]) $("panel-" + n).hidden = n !== name;
     $("shade").hidden = !name;
     document.body.classList.toggle("ui", !!name);
+    document.body.classList.toggle("login", name === "login");
   }
 
   $("hint").innerHTML = HINT;
-  setTimeout(() => { $("hint").style.opacity = "0"; }, 9000);
+  setTimeout(() => { $("hint").style.opacity = "0"; }, 12000);
   setHealth(20);
   select(0);
 
@@ -166,6 +191,14 @@ export function createHud({ settings, onSettings, onEnter, onClose }) {
     selected: () => sel,
     selectedItem: () => inv[sel],
     show,
+    renderLogin,
+    setUser: (u) => { user = u; entered = false; },
+    say: (text) => {
+      const el = $("say");
+      el.textContent = text; el.classList.add("show");
+      clearTimeout(sayTimer);
+      sayTimer = setTimeout(() => el.classList.remove("show"), 2200);
+    },
     setResume: (on) => { $("resume").hidden = !on; },
     // 右上の「オンライン」表示。lines の先頭が見出し、"*" で始まる行は自分
     setOnline: (lines) => {

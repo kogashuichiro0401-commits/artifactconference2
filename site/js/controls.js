@@ -1,97 +1,193 @@
-// キーボードとマウスによる操作と、プレイヤーの状態。
-import { move } from "./physics.js";
+// 操作。「講義がちる。」のマイクラモードと同じ動きをそのまま移したもの。
+//  歩く 4.32/ダッシュ 5.6/しゃがみ 1.31、ジャンプ 9・重力 32、飛行 10.9(ダッシュ 21)、
+//  落下中にSpaceでエリトラ(1tick=0.05秒ごとの揚力・急降下で加速)、左クリックでロケット花火、
+//  F5で視点切り替え、ホイールでズーム(視野角をせまく)、視点移動 0.0035/ズーム倍率。
+import { BOUND, YMAX } from "./shared.js";
 
-const MOVE_CODES = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight"]);
+const HW = 0.3;               // 体の半分の幅
+const VMAX = 40;              // エリトラの最高速度
+const GAME = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "F5", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
 export class Controls {
-  constructor(world, spawn, win, doc) {
-    this.world = world;
-    this.p = {
-      x: spawn.x, y: spawn.y, z: spawn.z,
-      vx: 0, vy: 0, vz: 0,
-      yaw: 0, pitch: 0,
-      onGround: false, fly: false, sprint: false, sneak: false,
-    };
-    this.keys = new Set();
-    this.locked = false;        // マウスが「視点モード」になっているか
-    this.sens = 0.0022;         // マウス感度
-    this.eye = 1.62;            // 目の高さ
-    this.lastSpace = -1000;   // 直前に押した時刻(ダブル押しの判定用)
-    this.lastW = -1000;
-    win.addEventListener("keydown", (e) => this.keydown(e));
-    win.addEventListener("keyup", (e) => this.keyup(e));
+  constructor({ colliders, spawn, win, doc, say }) {
+    this.boxes = colliders;
+    this.spawn = spawn;
+    this.say = say || (() => {});
+    this.cfg = { ely: true, rks: true, rkt: 2, rka: 30 };   // エリトラ / ロケット(あり・時間・加速度)
+    this.keys = {};
+    this.locked = false;
+    this.sens = 1;                 // 視点の感度(倍率)
+    this.baseFov = 70;
+    this.lastW = -1000; this.lastS = -1000; this.lastSp = -1000;
+    this.sprintKey = "KeyW";
+    this.gAcc = 0;
+    this.kick = 0;
+    this.rocketT = 1;              // ロケットを打ったあとの手の動き
+    this.p = { zm: 1, zt: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, ground: false, glide: false, boost: 0, fly: false, sprint: false, sneak: false, view: 0, fov: 70, bodyYaw: 0, t: 0 };
+    this.respawn();
+    win.addEventListener("keydown", (e) => this.key(e, true));
+    win.addEventListener("keyup", (e) => this.key(e, false));
     win.addEventListener("blur", () => this.release());
-    doc.addEventListener("mousemove", (e) => this.mousemove(e));
+    doc.addEventListener("mousemove", (e) => this.mouse(e));
+    win.addEventListener("mousedown", (e) => { if (this.locked && e.button === 0 && this.p.glide && this.cfg.rks) this.fireRocket(e); }, true);
   }
 
-  release() {
-    this.keys.clear();
-    this.p.sprint = false;
+  respawn() {
+    const p = this.p, s = this.spawn;
+    Object.assign(p, { x: s.x, y: s.y, z: s.z, vx: 0, vy: 0, vz: 0, yaw: s.yaw, pitch: s.pitch, ground: true, glide: false, boost: 0, fly: false, sprint: false, sneak: false, bodyYaw: s.yaw });
+  }
+  release() { this.keys = {}; this.p.sprint = false; this.p.sneak = false; }
+  eyeH() { return this.p.sneak ? 1.27 : 1.62; }
+  curH() { return this.p.sneak ? 1.5 : 1.8; }
+  lookDir() { const p = this.p, cp = Math.cos(p.pitch); return [-Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp]; }
+
+  fireRocket(e) {
+    if (e) e.preventDefault();
+    this.p.boost = this.cfg.rkt; this.rocketT = 0;
+    this.say("ロケット花火！");
   }
 
-  keydown(e) {
+  mouse(e) {
     if (!this.locked) return;
-    if (MOVE_CODES.has(e.code)) e.preventDefault();
-    if (e.repeat) return;
-    const now = performance.now();
-    if (e.code === "Space") {
-      if (now - this.lastSpace < 300) {   // ダブルSpace = 飛行の切り替え
-        this.p.fly = !this.p.fly;
-        this.p.vy = 0;
-        this.lastSpace = -1000;
-      } else {
-        this.lastSpace = now;
-      }
-    }
-    if (e.code === "KeyW") {
-      if (now - this.lastW < 300) this.p.sprint = true;   // Wを2回 = ダッシュ
-      this.lastW = now;
-    }
-    this.keys.add(e.code);
+    const p = this.p, k = 0.0035 * this.sens / p.zm;
+    p.yaw -= (e.movementX || 0) * k;
+    p.pitch = Math.max(-1.5707, Math.min(1.5707, p.pitch - (e.movementY || 0) * k));
   }
 
-  keyup(e) {
-    this.keys.delete(e.code);
-    if (e.code === "KeyW") this.p.sprint = false;
-  }
-
-  mousemove(e) {
-    if (!this.locked) return;
+  wheel(e) {
     const p = this.p;
-    p.yaw -= (e.movementX || 0) * this.sens;
-    p.pitch -= (e.movementY || 0) * this.sens;
-    const lim = (89 * Math.PI) / 180;
-    p.pitch = Math.max(-lim, Math.min(lim, p.pitch));
+    const dz = e.deltaY * (e.deltaMode === 1 ? 16 : 1) * (e.ctrlKey ? 0.012 : 0.004);
+    p.zt = Math.max(1, Math.min(14, p.zt * Math.exp(-dz)));
+    if (p.zt < 1.02) p.zt = 1;
+  }
+
+  key(e, down) {
+    const code = e.code, p = this.p;
+    if (!this.locked && down) return;
+    if (GAME.has(code) && this.locked) e.preventDefault();
+    if (code === "ShiftLeft" || code === "ShiftRight") {
+      this.keys.Shift = down;
+      if (down) { if (!p.fly) { p.sneak = true; p.sprint = false; } } else p.sneak = false;
+      return;
+    }
+    if (e.repeat && down) return;
+    if (down) {
+      const now = performance.now();
+      if (code === "KeyW") { if (now - this.lastW < 300) { p.sprint = !p.sneak; this.sprintKey = "KeyW"; } this.lastW = now; }
+      if (code === "KeyS") { if (now - this.lastS < 300) { p.sprint = !p.sneak; this.sprintKey = "KeyS"; } this.lastS = now; }
+      if (code === "Space") {
+        if (now - this.lastSp < 300) { p.fly = !p.fly; p.vy = 0; this.lastSp = -1000; p.glide = false; p.boost = 0; if (p.fly) p.sneak = false; }
+        else {
+          this.lastSp = now;
+          if (p.glide) { p.glide = false; p.boost = 0; this.say("滑空を終えました(自由落下)"); }
+          else if (this.cfg.ely && !p.fly && !p.ground && p.vy < -1) { p.glide = true; this.say("エリトラが開きました(左クリック=ロケット花火)"); }
+        }
+        this.kick = 1;
+      }
+      if (code === "F5") p.view = (p.view + 1) % 3;
+      this.keys[code] = true;
+    } else {
+      this.keys[code] = false;
+      if (code === this.sprintKey) p.sprint = false;
+    }
+  }
+
+  hits(x, y, z, h) {
+    for (let k = 0; k < this.boxes.length; k++) {
+      const b = this.boxes[k];
+      if (x + HW > b[0] && x - HW < b[3] && z + HW > b[2] && z - HW < b[5] && y + h > b[1] && y < b[4]) return b;
+    }
+    return null;
+  }
+
+  // マイクラのエリトラ(1秒に20回の計算): 揚力・急降下で加速・上向きで減速・向いた方へ勢いが曲がる
+  glideTick(dt, v) {
+    const p = this.p;
+    this.gAcc += dt;
+    while (this.gAcc >= 0.05) {
+      this.gAcc -= 0.05;
+      const L = this.lookDir();
+      let vx = v[0] / 20, vy = v[1] / 20, vz = v[2] / 20;
+      const hl = Math.hypot(L[0], L[2]), hv = Math.hypot(vx, vz), lift = hl * hl;
+      let d;
+      vy += -0.08 + lift * 0.06;
+      if (vy < 0 && hl > 0) { d = vy * -0.1 * lift; vx += L[0] * d / hl; vy += d; vz += L[2] * d / hl; }
+      if (p.pitch > 0 && hl > 0) { d = hv * Math.sin(p.pitch) * 0.04; vx -= L[0] * d / hl; vy += d * 3.2; vz -= L[2] * d / hl; }
+      if (hl > 0) { vx += (L[0] / hl * hv - vx) * 0.1; vz += (L[2] / hl * hv - vz) * 0.1; }
+      vx *= 0.99; vy *= 0.98; vz *= 0.99;
+      if (p.boost > 0) {   // ロケット花火: 向いている方向に押される
+        p.boost -= 0.05;
+        const a = this.cfg.rka / 400;
+        vx += L[0] * a; vy += L[1] * a; vz += L[2] * a;
+        const sp2 = Math.hypot(vx, vy, vz) * 20;
+        if (sp2 > VMAX) { const q = VMAX / sp2; vx *= q; vy *= q; vz *= q; }
+      }
+      v[0] = vx * 20; v[1] = vy * 20; v[2] = vz * 20;
+    }
+    p.vx = v[0]; p.vy = v[1]; p.vz = v[2];
   }
 
   update(dt) {
-    const p = this.p, k = this.keys;
-    const f = (k.has("KeyW") ? 1 : 0) - (k.has("KeyS") ? 1 : 0);
-    const r = (k.has("KeyD") ? 1 : 0) - (k.has("KeyA") ? 1 : 0);
-    p.sneak = k.has("ShiftLeft") || k.has("ShiftRight");
-    if (f <= 0) p.sprint = false;
-
-    const speed = p.fly ? (p.sprint ? 20 : 10) : p.sneak ? 1.3 : p.sprint ? 5.6 : 4.3;
-    const len = Math.hypot(f, r) || 1;
-    const sin = Math.sin(p.yaw), cos = Math.cos(p.yaw);
-    const tx = ((-sin * f + cos * r) / len) * speed;
-    const tz = ((-cos * f - sin * r) / len) * speed;
-    const a = Math.min(1, dt * (p.fly || p.onGround ? 18 : 8));
-    p.vx += (tx - p.vx) * a;
-    p.vz += (tz - p.vz) * a;
-
+    const p = this.p, keys = this.keys;
+    if (this.rocketT < 1) this.rocketT = Math.min(1, this.rocketT + dt / 0.4);
+    if (p.glide && (p.fly || p.ground || !this.cfg.ely)) { p.glide = false; p.boost = 0; }
+    const gv = p.glide ? [p.vx, p.vy, p.vz] : null;
+    let f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), s = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+    const ln = Math.hypot(f, s);
+    if (ln > 1) { f /= ln; s /= ln; }
+    if (keys.ArrowLeft) p.yaw += 1.8 * dt;
+    if (keys.ArrowRight) p.yaw -= 1.8 * dt;
+    if (keys.ArrowUp) p.pitch = Math.min(1.5707, p.pitch + 1.5 * dt);
+    if (keys.ArrowDown) p.pitch = Math.max(-1.5707, p.pitch - 1.5 * dt);
+    if (!keys[this.sprintKey] || p.sneak) p.sprint = false;
+    const sp = p.fly ? (p.sprint ? 21 : 10.9) : p.sneak ? 1.31 : p.sprint ? 5.6 : 4.32;
+    const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
+    const tx = (-sy * f + cy * s) * sp, tz = (-cy * f - sy * s) * sp;
+    const rate = p.ground ? 16 : p.fly ? 6 : 4, k = 1 - Math.exp(-rate * dt);
+    p.vx += (tx - p.vx) * k; p.vz += (tz - p.vz) * k;
     if (p.fly) {
-      const t = ((k.has("Space") ? 1 : 0) - (p.sneak ? 1 : 0)) * 8;
-      p.vy += (t - p.vy) * Math.min(1, dt * 12);
+      const ty = ((keys.Space ? 1 : 0) - (keys.Shift ? 1 : 0)) * 8;
+      p.vy += (ty - p.vy) * (1 - Math.exp(-10 * dt));
     } else {
-      p.vy = Math.max(-60, p.vy - 32 * dt);
-      if (k.has("Space") && p.onGround) { p.vy = 9; p.onGround = false; }   // 約1.27ブロックの高さ
+      p.vy = Math.max(-78, p.vy - 32 * dt);
+      if (keys.Space && p.ground) { p.vy = 9; p.ground = false; }
     }
+    if (gv) this.glideTick(dt, gv);
+    const h = this.curH(), nx = p.x + p.vx * dt;
+    if (!this.hits(nx, p.y, p.z, h)) p.x = nx; else p.vx = 0;
+    const nz = p.z + p.vz * dt;
+    if (!this.hits(p.x, p.y, nz, h)) p.z = nz; else p.vz = 0;
+    let ny = p.y + p.vy * dt;
+    p.ground = false;
+    const b = this.hits(p.x, ny, p.z, h);
+    if (b) { if (p.vy < 0) { ny = b[4]; p.ground = true; } else ny = b[1] - h; p.vy = 0; }
+    if (ny <= 0) { ny = 0; if (p.vy < 0) p.vy = 0; p.ground = true; }
+    p.y = Math.min(ny, YMAX);
+    p.x = Math.max(-BOUND, Math.min(BOUND, p.x)); p.z = Math.max(-BOUND, Math.min(BOUND, p.z));
+    if (p.glide && p.ground) { p.glide = false; p.boost = 0; }
+    if (p.fly && p.ground && keys.Shift) p.fly = false;
+    // 体の向き(三人称視点で見える)
+    const hs = Math.hypot(p.vx, p.vz);
+    const dy = Math.atan2(Math.sin(p.yaw - p.bodyYaw), Math.cos(p.yaw - p.bodyYaw));
+    if (hs > 0.3) p.bodyYaw += dy * (1 - Math.exp(-12 * dt));
+    else if (Math.abs(dy) > 0.9) p.bodyYaw = p.yaw - Math.sign(dy) * 0.9;
+    if (p.glide) p.bodyYaw = p.yaw;
+    p.t += dt;
+    this.hs = hs;
+  }
 
-    move(this.world, p, dt);
-    if (p.fly && p.onGround && p.sneak) p.fly = false;   // 飛行中に地面でShift = 飛行終了
-
-    const eyeT = p.sneak && !p.fly ? 1.27 : 1.62;
-    this.eye += (eyeT - this.eye) * Math.min(1, dt * 20);
+  // カメラを置く。視野角(ダッシュ・飛行・滑空で広がる)とズーム、視点(F5)
+  camera(cam, dt) {
+    const p = this.p, ex = p.x, ey = p.y + this.eyeH(), ez = p.z, d = this.lookDir();
+    const tf = this.baseFov + (p.sprint ? 9 : 0) + (p.fly ? 3 : 0) + (p.glide ? Math.min(22, Math.hypot(p.vx, p.vy, p.vz) * 0.45) : 0);
+    p.fov += (tf - p.fov) * (1 - Math.exp(-10 * dt));
+    p.zm += (p.zt - p.zm) * (1 - Math.exp(-12 * dt));
+    const ef = (2 * Math.atan(Math.tan((p.fov * Math.PI) / 360) / p.zm) * 180) / Math.PI;
+    if (Math.abs(cam.fov - ef) > 0.005) { cam.fov = ef; cam.updateProjectionMatrix(); }
+    if (this.kick > 0) this.kick = Math.max(0, this.kick - dt * 5);
+    const ky = this.kick * 0.07;
+    if (p.view === 0) { cam.position.set(ex, ey - ky, ez); cam.rotation.set(p.pitch, p.yaw, 0, "YXZ"); }
+    else if (p.view === 1) { cam.position.set(ex - d[0] * 4, Math.max(0.2, ey - d[1] * 4), ez - d[2] * 4); cam.rotation.set(p.pitch, p.yaw, 0, "YXZ"); }
+    else { cam.position.set(ex + d[0] * 4, Math.max(0.2, ey + d[1] * 4), ez + d[2] * 4); cam.rotation.set(-p.pitch, p.yaw + Math.PI, 0, "YXZ"); }
   }
 }

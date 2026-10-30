@@ -2,22 +2,26 @@
 import { VERSION } from "./version.js";
 
 export class Net {
-  // h = { pose(), onStatus(s), onReset(), onWelcome(m), onJoin(p), onLeave(id), onPos(m), onName(m), onFull() }
+  // h = { token(), pose(), onStatus(s), onReset(), onWelcome(m), onJoin(p), onLeave(id), onPos(m), onName(m), onFull(), onAuth(), onKicked() }
   constructor(h) {
     this.h = h;
     this.ws = null;
     this.id = null;
-    this.name = "";
     this.wanted = false;
     this.full = false;
     this.retry = 0;
     this.pingTimer = 0;
   }
 
-  start(name) {
-    this.name = name;
+  start() {
     this.wanted = true;
     this.open();
+  }
+
+  stop() {
+    this.wanted = false;
+    clearInterval(this.pingTimer);
+    try { if (this.ws) this.ws.close(); } catch (e) { /* すでに閉じている */ }
   }
 
   ready() {
@@ -28,14 +32,9 @@ export class Net {
     if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(obj));
   }
 
-  setName(name) {
-    this.name = name;
-    this.send({ t: "name", name });
-  }
-
   sendPos(p) {
     if (!this.ready()) return;
-    this.send({ t: "pos", x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly, sneak: p.sneak });
+    this.send({ t: "pos", x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly, sneak: p.sneak, glide: p.glide });
   }
 
   open() {
@@ -53,7 +52,7 @@ export class Net {
     ws.onopen = () => {
       this.retry = 0;
       const p = this.h.pose();
-      ws.send(JSON.stringify({ t: "hello", name: this.name, version: VERSION, x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch }));
+      ws.send(JSON.stringify({ t: "hello", token: this.h.token(), version: VERSION, x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch }));
       clearInterval(this.pingTimer);
       this.pingTimer = setInterval(() => { try { ws.send("ping"); } catch (e) { /* 切れていたら onclose で直す */ } }, 20000);
     };
@@ -84,6 +83,8 @@ export class Net {
       case "leave": this.h.onLeave(m.id); break;
       case "pos": if (m.id !== this.id) this.h.onPos(m); break;
       case "name": this.h.onName(m); break;
+      case "auth": this.wanted = false; this.h.onAuth(); break;
+      case "kicked": this.wanted = false; this.h.onKicked(); break;
       case "full": this.full = true; this.wanted = false; this.h.onFull(); break;
       default: break;
     }
