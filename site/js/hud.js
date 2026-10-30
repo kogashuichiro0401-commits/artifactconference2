@@ -31,7 +31,6 @@ const BOOK = `
     <li>滑空中の<b>左クリック</b>…ロケット花火で加速する</li>
     <li><b>マウス</b>…見る方向。<b>ホイール</b>…ズーム。<b>F5</b>…視点の切り替え(一人称/後ろ/前)</li>
     <li><b>1〜9</b>…手に持つものを変える。<b>E</b>…持ち物。<b>Esc</b>…メニュー</li>
-    <li>メーターパネルの3つの丸い画面に、artifact学会。の機能が入っています(真ん中=ダッシュボード、右=掲示板)</li>
   </ul>`;
 
 export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onLogout, onRespawn }) {
@@ -142,7 +141,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       ${notice}
       <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}</span><button class="pill" id="btn-logout">ログアウト</button></div>
       <button class="pill primary block" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
-      <button class="pill block" id="btn-respawn">ダッシュボードの中央にもどる (R)</button>
+      <button class="pill block" id="btn-respawn">スタート地点にもどる (R)</button>
       <h2>設定</h2>
       <label>視野角 <input type="range" id="set-fov" min="50" max="110" step="1" value="${settings.fov}"><span id="set-fov-v">${settings.fov}</span></label>
       <label>マウス感度 <input type="range" id="set-sens" min="1" max="10" step="0.5" value="${settings.sens}"><span id="set-sens-v">${settings.sens}</span></label>

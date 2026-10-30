@@ -3,9 +3,7 @@ import { Controls } from "./controls.js";
 import { createHud } from "./hud.js";
 import { Net } from "./net.js";
 import { RemotePlayers, createAvatar } from "./players.js";
-import { buildSwift } from "./swift.js";
 import { createFirstPerson } from "./fp.js";
-import { startData } from "./data.js";
 import { restore, login, logout, getToken } from "./auth.js";
 import { VERSION } from "./version.js";
 
@@ -37,36 +35,19 @@ scene.add(new THREE.HemisphereLight(0xdfeeff, 0x9aa3ae, 0.62));
 const sun = new THREE.DirectionalLight(0xfff6e8, 0.95);
 sun.position.set(200, 330, 140);
 sun.target.position.set(0, 10, 0);
-sun.castShadow = true;
+sun.castShadow = false;
 sun.shadow.mapSize.set(window.__LO ? 1024 : 2048, window.__LO ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -110, right: 110, top: 110, bottom: -110, near: 10, far: 900 });
 sun.shadow.bias = -0.0006;
 sun.shadow.normalBias = 0.05;
 scene.add(sun, sun.target);
 
-// 床: ほぼ真っ白。かすかな目地だけ入れて、動いているのがわかるようにする
-const gridCv = document.createElement("canvas");
-gridCv.width = gridCv.height = 64;
-{
-  const g = gridCv.getContext("2d");
-  g.fillStyle = "#ffffff"; g.fillRect(0, 0, 64, 64);
-  g.fillStyle = "#e6ebf1"; g.fillRect(0, 0, 64, 2); g.fillRect(0, 0, 2, 64);
-}
-const gridTex = new THREE.CanvasTexture(gridCv);
-gridTex.wrapS = gridTex.wrapT = THREE.RepeatWrapping;
-gridTex.anisotropy = 8;
-const GSIZE = 6000, GCELL = 60;
-gridTex.repeat.set(GSIZE / GCELL, GSIZE / GCELL);
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(GSIZE, GSIZE), new THREE.MeshLambertMaterial({ map: gridTex }));
+// 床: 真っ白で平ら。空は青
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.MeshLambertMaterial({ color: 0xffffff }));
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
-
-const __t0 = performance.now();
-const swift = buildSwift(THREE, scene);
-window.__buildMs = Math.round(performance.now() - __t0);
-const gauges = swift.gauges;
-const data = startData(gauges);
+const world = { colliders: [], spawn: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 } };
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -79,7 +60,7 @@ resize();
 
 // ----- 操作 -----
 let hud;
-const controls = new Controls({ colliders: swift.colliders, spawn: swift.spawn, win: window, doc: document, say: (t) => hud && hud.say(t) });
+const controls = new Controls({ colliders: world.colliders, spawn: world.spawn, win: window, doc: document, say: (t) => hud && hud.say(t) });
 const firstPerson = createFirstPerson(THREE, camera, scene, controls);
 const me3d = createAvatar(THREE, "#c0392b");
 scene.add(me3d.root);
@@ -109,7 +90,7 @@ hud = createHud({
   },
   onLogout: async () => {
     await logout();
-    net.stop(); netStarted = false; remotes.clear(); data.stop();
+    net.stop(); netStarted = false; remotes.clear();
     user = null; netState = "idle"; refreshOnline();
     setPanel("login");
   },
@@ -118,7 +99,6 @@ hud = createHud({
 function signedIn(u) {
   user = u;
   hud.setUser(u);
-  data.start();
   setPanel("menu");
 }
 
@@ -164,7 +144,7 @@ const net = new Net({
   onName: (m) => { remotes.setName(m.id, m.name); refreshOnline(); },
   onFull: () => { netState = "full"; refreshOnline(); },
   onAuth: () => {   // ログインが無効になった(期限切れなど)
-    logout().then(() => { user = null; netStarted = false; remotes.clear(); data.stop(); setPanel("login"); hud.renderLogin("ログインの期限が切れました。もう一度ログインしてください。"); });
+    logout().then(() => { user = null; netStarted = false; remotes.clear(); setPanel("login"); hud.renderLogin("ログインの期限が切れました。もう一度ログインしてください。"); });
   },
   onKicked: () => { netState = "closed"; netStarted = false; remotes.clear(); refreshOnline(); hud.say("ほかの画面で入ったため、こちらは切断されました"); },
 });
@@ -235,7 +215,7 @@ window.addEventListener("keydown", (e) => {
     else if (!panel && locked) setPanel("inventory");
     return;
   }
-  if (e.code === "KeyR" && !panel && locked) { controls.respawn(); hud.say("ダッシュボードの中央にもどりました"); return; }
+  if (e.code === "KeyR" && !panel && locked) { controls.respawn(); hud.say("スタート地点にもどりました"); return; }
   if (e.code === "F3") { e.preventDefault(); hud.toggleDebug(); return; }
   if (panel && panel !== "inventory") return;
   const m = /^Digit([1-9])$/.exec(e.code);
@@ -264,9 +244,8 @@ function frame(t) {
   }
   firstPerson(dt);
   remotes.update(dt);
-  floor.position.set(Math.round(camera.position.x / GCELL) * GCELL, 0, Math.round(camera.position.z / GCELL) * GCELL);
+  floor.position.set(camera.position.x, 0, camera.position.z);
   const kmh = Math.hypot(p.vx, p.vy, p.vz) * 3;
-  gauges.tick(dt, kmh);
   renderer.render(scene, camera);
   sendPose(t);
 
@@ -281,5 +260,5 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { controls, swift, scene, camera, hud, gauges };
+window.__craft = { controls, scene, camera, hud };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });
