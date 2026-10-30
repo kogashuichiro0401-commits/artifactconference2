@@ -24,6 +24,8 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem(SKEY) || "{}")); }
 // ----- 3D表示: 白い床・青い空・平ら -----
 const SKY = 0x5ab4ee;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.shadowMap.enabled = !window.__NOSHADOW;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
@@ -31,10 +33,16 @@ scene.fog = new THREE.Fog(SKY, 500, 2600);
 const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 4000);
 camera.rotation.order = "YXZ";
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0xaab6c4, 0.8));
-const sun = new THREE.DirectionalLight(0xffffff, 0.4);
-sun.position.set(300, 600, 200);
-scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xdfeeff, 0x9aa3ae, 0.62));
+const sun = new THREE.DirectionalLight(0xfff6e8, 0.95);
+sun.position.set(200, 330, 140);
+sun.target.position.set(0, 10, 0);
+sun.castShadow = true;
+sun.shadow.mapSize.set(window.__LO ? 1024 : 2048, window.__LO ? 1024 : 2048);
+Object.assign(sun.shadow.camera, { left: -110, right: 110, top: 110, bottom: -110, near: 10, far: 900 });
+sun.shadow.bias = -0.0006;
+sun.shadow.normalBias = 0.05;
+scene.add(sun, sun.target);
 
 // 床: ほぼ真っ白。かすかな目地だけ入れて、動いているのがわかるようにする
 const gridCv = document.createElement("canvas");
@@ -51,9 +59,12 @@ const GSIZE = 6000, GCELL = 60;
 gridTex.repeat.set(GSIZE / GCELL, GSIZE / GCELL);
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(GSIZE, GSIZE), new THREE.MeshLambertMaterial({ map: gridTex }));
 floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
 scene.add(floor);
 
+const __t0 = performance.now();
 const swift = buildSwift(THREE, scene);
+window.__buildMs = Math.round(performance.now() - __t0);
 const gauges = swift.gauges;
 const data = startData(gauges);
 
@@ -271,3 +282,4 @@ requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
 window.__craft = { controls, swift, scene, camera, hud, gauges };
+window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });

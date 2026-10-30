@@ -10,7 +10,7 @@ function canvas(n) {
 }
 
 // 細かいつぶつぶ(樹脂のシボ・カーペットなど)
-function grain(base, lights, darks, n = 256, count = 5200, size = 2) {
+function grain(base, lights, darks, n = 512, count = 20000, size = 2) {
   const c = canvas(n), g = c.getContext("2d");
   g.fillStyle = base; g.fillRect(0, 0, n, n);
   for (let i = 0; i < count; i++) {
@@ -23,7 +23,7 @@ function grain(base, lights, darks, n = 256, count = 5200, size = 2) {
 }
 
 // 織物(シート・ドアの布)。縦横の糸と、青い糸のななめ模様
-function weave(base, thread, blue, n = 256) {
+function weave(base, thread, blue, n = 512) {
   const c = canvas(n), g = c.getContext("2d");
   g.fillStyle = base; g.fillRect(0, 0, n, n);
   for (let y = 0; y < n; y += 4) {
@@ -42,11 +42,11 @@ function weave(base, thread, blue, n = 256) {
 }
 
 // 革のしぼ(細かい網目)
-function leather(base, line, n = 256) {
+function leather(base, line, n = 512) {
   const c = canvas(n), g = c.getContext("2d");
   g.fillStyle = base; g.fillRect(0, 0, n, n);
   g.strokeStyle = line; g.lineWidth = 1.4;
-  for (let i = 0; i < 900; i++) {
+  for (let i = 0; i < 3600; i++) {
     const x = rnd() * n, y = rnd() * n, r = 3 + rnd() * 4;
     g.globalAlpha = 0.18 + rnd() * 0.3;
     g.beginPath();
@@ -112,27 +112,25 @@ export function makeMaterials(THREE) {
   const tex = (cv, tile) => {
     const t = new T.CanvasTexture(cv);
     t.wrapS = t.wrapT = T.RepeatWrapping;
-    t.anisotropy = 4;
+    t.anisotropy = 8;
     t.userData = { tile };
     return t;
   };
-  const lam = (color, cv, tile, extra) => {
-    const m = new T.MeshLambertMaterial(Object.assign({ color, map: cv ? tex(cv, tile) : null }, extra || {}));
+  const std = (color, cv, tile, rough, metal, bump, extra) => {
+    const map = cv ? tex(cv, tile) : null;
+    const m = new T.MeshStandardMaterial(Object.assign({ color, map, bumpMap: map, bumpScale: bump, roughness: rough, metalness: metal }, extra || {}));
     m.userData = { tile: tile || 1 };
     return m;
   };
-  const phong = (color, cv, tile, shin, extra) => {
-    const m = new T.MeshPhongMaterial(Object.assign({ color, map: cv ? tex(cv, tile) : null, shininess: shin, specular: 0x444444 }, extra || {}));
-    m.userData = { tile: tile || 1 };
-    return m;
-  };
+  const lam = (color, cv, tile, extra) => std(color, cv, tile, 0.92, 0, 0.12, extra);
+  const phong = (color, cv, tile, shin, extra) => std(color, cv, tile, Math.max(0.18, 0.9 - shin / 120), shin > 60 ? 0.55 : 0.05, 0.6, extra);
   return {
-    plasticDk: lam(0xffffff, grain("#3b3e43", "#6a6e75", "#1c1d20"), 0.12),     // ダッシュ・ドアの黒っぽい樹脂
+    plasticDk: lam(0xffffff, grain("#3b3e43", "#6a6e75", "#1c1d20"), 0.25),     // ダッシュ・ドアの黒っぽい樹脂
     plasticMid: lam(0xffffff, grain("#5a5e64", "#8a8e95", "#2c2e32"), 0.12),    // 少し明るい樹脂
     plasticBk: lam(0xffffff, grain("#232427", "#4a4c52", "#0b0b0c"), 0.1),
     headliner: lam(0xffffff, weave("#bdbcb4", "#d8d7cf", "#c4c3bb"), 0.1),     // 天井の布
-    carpet: lam(0xffffff, grain("#34363b", "#585b62", "#17181a", 256, 9000, 1.5), 0.1),
-    cargo: lam(0xffffff, grain("#45474c", "#6d7077", "#202125", 256, 9000, 1.5), 0.1),
+    carpet: lam(0xffffff, grain("#34363b", "#585b62", "#17181a", 512, 36000, 1.5), 0.1),
+    cargo: lam(0xffffff, grain("#45474c", "#6d7077", "#202125", 512, 36000, 1.5), 0.1),
     fabric: lam(0xffffff, weave("#2e3037", "#555a66", "#3a5aa6"), 0.09),        // シートの布(青い糸入り)
     fabricDk: lam(0xffffff, weave("#25272d", "#464a54", "#2c4580"), 0.09),
     stitch: lam(0xffffff, stitchCloth(), 0.12),                                  // ドアの肘かけ

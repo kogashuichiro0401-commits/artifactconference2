@@ -52,19 +52,46 @@ export function buildSwift(THREE, scene) {
 
   // ---- 箱を置く道具 ----
   const ux = (m) => m * S, uy = (h) => FY + h * S, uz = (m) => m * S;
-  const MAXA = 4;
+  // 角を丸めた箱。面を細かく割って、縁だけ丸める(模様の座標はそのまま)
+  const NS = 6;
+  function roundBox(w, h, d, r) {
+    const g = new T.BoxGeometry(1, 1, 1, NS, NS, NS);
+    const pos = g.attributes.position, nor = g.attributes.normal;
+    const hw = w / 2, hh = h / 2, hd = d / 2;
+    const fr = [0, 0.3, 1];
+    // 座標の並び: 端, 端から0.3r内側, 端からr内側, 中央
+    const coord = (half, t) => {
+      const i = Math.round((t + 0.5) * NS);
+      if (i === 3) return 0;
+      const sign = i < 3 ? -1 : 1, k = i < 3 ? i : NS - i;
+      const inset = k === 0 ? 0 : k === 1 ? 0.3 * r : r;
+      return sign * (half - inset);
+    };
+    const ix = hw - r, iy = hh - r, iz = hd - r;
+    for (let i = 0; i < pos.count; i++) {
+      const x = coord(hw, pos.getX(i)), y = coord(hh, pos.getY(i)), z = coord(hd, pos.getZ(i));
+      const cx = Math.max(-ix, Math.min(ix, x)), cy = Math.max(-iy, Math.min(iy, y)), cz = Math.max(-iz, Math.min(iz, z));
+      let dx = x - cx, dy = y - cy, dz = z - cz;
+      const len = Math.hypot(dx, dy, dz);
+      if (len > 1e-9) { dx /= len; dy /= len; dz /= len; pos.setXYZ(i, cx + dx * r, cy + dy * r, cz + dz * r); nor.setXYZ(i, dx, dy, dz); }
+      else pos.setXYZ(i, x, y, z);
+    }
+    return g;
+  }
   function uvFix(g, w, h, d, tile) {
-    const uv = g.attributes.uv, k = 1 / tile;
+    const uv = g.attributes.uv, k = 1 / tile, per = uv.count / 6;
     const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
-    for (let f = 0; f < 6; f++) for (let v = 0; v < 4; v++) {
-      const i = f * 4 + v;
+    for (let f = 0; f < 6; f++) for (let v = 0; v < per; v++) {
+      const i = f * per + v;
       uv.setXY(i, uv.getX(i) * dims[f][0] * k, uv.getY(i) * dims[f][1] * k);
     }
   }
   // x0..x1, h0..h1, z0..z1 はメートル。mat は材質、または6面(+x,-x,+y,-y,+z,-z)の配列
   function B(x0, x1, h0, h1, z0, z1, mat, o = {}) {
     const w = (x1 - x0) * S, hh = (h1 - h0) * S, d = (z1 - z0) * S;
-    const g = new T.BoxGeometry(w, hh, d);
+    if (o.hide) { colliders.push([ux(x0), uy(h0), uz(z0), ux(x1), uy(h1), uz(z1)]); return null; }
+    const rr = o.r !== undefined ? o.r : Math.min(0.012 * S, Math.min(w, hh, d) * 0.45);
+    const g = rr > 0.04 ? roundBox(w, hh, d, rr) : new T.BoxGeometry(w, hh, d);
     const m0 = Array.isArray(mat) ? mat[0] : mat;
     uvFix(g, x1 - x0, h1 - h0, z1 - z0, (m0.userData && m0.userData.tile) || 1);
     const mesh = new T.Mesh(g, mat);
@@ -80,7 +107,7 @@ export function buildSwift(THREE, scene) {
     colliders.push([ux(x0), uy(h0), uz(z0), ux(x1), uy(h1), uz(z1)]);
   }
   function cyl(rt, rb, len, mat, x, h, z, axis = "z", o = {}) {   // 円柱(axis方向に伸びる)
-    const g = new T.CylinderGeometry(rt * S, rb * S, len * S, o.seg || 20);
+    const g = new T.CylinderGeometry(rt * S, rb * S, len * S, o.seg || 36);
     const mesh = new T.Mesh(g, mat);
     if (axis === "z") mesh.rotation.x = Math.PI / 2;
     if (axis === "x") mesh.rotation.z = Math.PI / 2;
@@ -111,7 +138,7 @@ export function buildSwift(THREE, scene) {
   B(0.10, 0.17, 0.06, 0.16, -0.70, -0.68, M.rubber, { col: false });   // フットレスト
 
   // ================= ダッシュボード =================
-  B(-W, W, 0, 0.60, -0.95, -0.40, M.plasticDk);                       // 本体
+  B(-W, W, 0, 0.60, -0.95, -0.40, M.plasticDk, { hide: true });       // 本体(当たり判定。見た目は下で曲面に作る)
   B(-0.64, 0.64, 0.60, 0.68, -0.93, -0.80, slats, { col: true });     // デフロスター
   B(-0.66, 0.66, 0.60, 0.61, -0.80, -0.62, M.plasticDk, { col: false });
   // センタースタック
@@ -314,6 +341,101 @@ export function buildSwift(THREE, scene) {
     });
   });
 
+
+  // ================= 細部(写真を見ながら足したもの) =================
+  const scaled = (mat, tile) => { const m = mat.clone(); m.map = mat.map.clone(); m.map.needsUpdate = true; m.bumpMap = m.map; m.map.repeat.set(1 / (tile * S), 1 / (tile * S)); return m; };
+  // ダッシュ本体: 横から見た輪郭を、なめらかな曲線でつないで押し出す
+  {
+    const sh = new T.Shape(), P = (z, h) => [z * S, h * S];
+    sh.moveTo(...P(-0.95, 0)); sh.lineTo(...P(-0.95, 0.625));
+    sh.bezierCurveTo(...P(-0.85, 0.64), ...P(-0.72, 0.612), ...P(-0.60, 0.602));
+    sh.lineTo(...P(-0.46, 0.60)); sh.quadraticCurveTo(...P(-0.395, 0.598), ...P(-0.388, 0.55));
+    sh.lineTo(...P(-0.388, 0.36)); sh.quadraticCurveTo(...P(-0.388, 0.31), ...P(-0.43, 0.29));
+    sh.lineTo(...P(-0.43, 0.22)); sh.quadraticCurveTo(...P(-0.40, 0.20), ...P(-0.40, 0.14));
+    sh.lineTo(...P(-0.40, 0)); sh.closePath();
+    const g = new T.ExtrudeGeometry(sh, { depth: 1.36 * S, bevelEnabled: true, bevelThickness: 0.35, bevelSize: 0.35, bevelSegments: 3, curveSegments: 14 });
+    g.translate(0, 0, -0.68 * S); g.rotateY(-Math.PI / 2);
+    const m = new T.Mesh(g, scaled(M.plasticDk, 0.12));
+    m.position.set(0, uy(0), 0); car.add(m);
+    // 助手席側のエアバッグの継ぎ目(うすい線)
+    B(-0.62, -0.08, 0.602, 0.604, -0.80, -0.78, M.black, { col: false, r: 0 });
+    B(-0.62, -0.60, 0.602, 0.604, -0.80, -0.50, M.black, { col: false, r: 0 });
+    B(-0.10, 0.10, 0.602, 0.608, -0.62, -0.56, M.black, { col: false });   // 日射センサーのスリット
+  }
+  // 立体のルーバー(吹き出し口): 枠 + 羽根5枚 + 縦のフィン
+  function louver(x, h, w, hh, z, face = 1) {
+    B(x - w / 2, x + w / 2, h - hh / 2, h + hh / 2, z - 0.006 * face, z + 0.004 * face, M.plasticBk, { col: false });
+    for (let i = 0; i < 5; i++) {
+      const y = h - hh / 2 + 0.008 + (hh - 0.016) * (i / 4);
+      B(x - w / 2 + 0.004, x + w / 2 - 0.004, y - 0.0025, y + 0.0025, z - 0.002 * face, z + 0.014 * face, M.plasticMid, { col: false, r: 0, rx: -0.35 * face });
+    }
+    B(x - 0.003, x + 0.003, h - hh / 2 + 0.004, h + hh / 2 - 0.004, z, z + 0.012 * face, M.plasticBk, { col: false, r: 0 });
+  }
+  louver(-0.09, 0.535, 0.12, 0.055, -0.30); louver(0.09, 0.535, 0.12, 0.055, -0.30);
+  function roundVent(x, h, z) {
+    cyl(0.046, 0.046, 0.012, M.plasticBk, x, h, z, "z");
+    for (let i = 0; i < 5; i++) B(x - 0.034, x + 0.034, h - 0.032 + i * 0.016 - 0.002, h - 0.032 + i * 0.016 + 0.002, z - 0.004, z + 0.01, M.plasticMid, { col: false, r: 0 });
+  }
+  roundVent(-0.62, 0.50, -0.386); roundVent(0.64, 0.50, -0.386);
+  // オーディオ: ボタンの列と、表示窓、ノブ
+  for (let i = 0; i < 6; i++) B(-0.15 + i * 0.027, -0.13 + i * 0.027, 0.368, 0.380, -0.298, -0.292, M.plasticBk, { col: false });
+  B(0.00, 0.14, 0.390, 0.428, -0.297, -0.292, lcd, { col: false });
+  B(-0.10, 0.07, 0.40, 0.404, -0.294, -0.290, M.black, { col: false, r: 0 });   // カセットの口
+  // エアコンのダイヤルに指かけの溝
+  for (const x of [-0.125, 0.125]) {
+    cyl(0.04, 0.04, 0.012, M.plasticBk, x, 0.185, -0.295, "z");
+    for (let k = 0; k < 18; k++) { const a = (k / 18) * 6.283; B(x + Math.cos(a) * 0.039 - 0.002, x + Math.cos(a) * 0.039 + 0.002, 0.185 + Math.sin(a) * 0.039 - 0.002, 0.185 + Math.sin(a) * 0.039 + 0.002, -0.304, -0.288, M.plasticMid, { col: false, r: 0 }); }
+    B(x - 0.002, x + 0.002, 0.185 + 0.016, 0.185 + 0.036, -0.309, -0.305, M.white, { col: false, r: 0 });
+  }
+  // ステアリングコラムのレバー(ウインカー/ライトとワイパー)
+  const stalk = (x0, x1, h, rx) => {
+    cyl(0.011, 0.011, Math.abs(x1 - x0), M.plasticBk, (x0 + x1) / 2, h, -0.30, "x");
+    cyl(0.016, 0.016, 0.04, M.plasticBk, x1 + Math.sign(x1 - x0) * 0.015, h, -0.30, "x");
+    cyl(0.017, 0.017, 0.006, M.silver, x1 - Math.sign(x1 - x0) * 0.005, h, -0.30, "x");
+  };
+  stalk(0.40, 0.56, 0.50); stalk(0.32, 0.17, 0.50);
+  B(0.37, 0.43, 0.47, 0.53, -0.37, -0.31, M.plasticBk, { col: false });      // コラムカバー
+  cyl(0.016, 0.016, 0.02, M.silver, 0.30, 0.47, -0.30, "z");               // キーまわり
+  // ペダルのすべり止め
+  [[0.215, 0.055], [0.30, 0.05], [0.40, 0.045]].forEach(([x, w]) => { for (let i = 0; i < 6; i++) B(x - w / 2 + 0.003, x + w / 2 - 0.003, 0.11 + i * 0.015, 0.115 + i * 0.015, -0.622, -0.616, M.black, { col: false, r: 0 }); });
+  // シートベルト(Bピラーから、反対がわの腰へ)
+  function belt(x0, h0, z0, x1, h1, z1) {
+    const a = new T.Vector3(ux(x0), uy(h0), uz(z0)), b = new T.Vector3(ux(x1), uy(h1), uz(z1)), L_ = a.distanceTo(b);
+    const m = new T.Mesh(new T.BoxGeometry(0.05 * S, L_, 0.004 * S), M.black);
+    m.position.copy(a).add(b).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    car.add(m);
+  }
+  belt(0.62, 0.98, 0.58, 0.22, 0.34, 0.52); belt(-0.62, 0.98, 0.58, -0.22, 0.34, 0.52);
+  [[0.62, 0.66], [-0.62, 0.66]].forEach(([x, z]) => B(x - 0.025, x + 0.025, 0.9, 1.0, z - 0.02, z + 0.02, M.plasticBk, { col: false }));
+  // シートの調整レバーとレール
+  [-1, 1].forEach((sg) => {
+    [0.36, -0.36].forEach((cx) => {
+      B(cx + sg * 0.265, cx + sg * 0.285, 0.06, 0.12, 0.05, 0.40, M.plasticBk, { col: false });
+      B(cx + sg * 0.12, cx + sg * 0.14, 0.0, 0.03, 0.0, 0.60, M.silver, { col: false, r: 0 });
+    });
+  });
+  B(0.265, 0.30, 0.12, 0.135, 0.06, 0.26, M.silver, { col: false });   // 運転席の前後レバー
+  // ドア: 窓枠のゴム・ドアロックのピン・プルカップ・肩の面
+  [-1, 1].forEach((sg) => {
+    const x0 = sg > 0 ? 0.625 : -0.67, x1 = sg > 0 ? 0.67 : -0.625;
+    B(x0, x1, 0.44, 0.62, -0.42, 0.55, M.plasticMid, { col: false });             // 肩の面(前ドア)
+    B(x0, x1, 0.44, 0.62, 0.62, 1.50, M.plasticMid, { col: false });             // 肩の面(後ドア)
+    B(sg > 0 ? 0.655 : -0.67, sg > 0 ? 0.67 : -0.655, 0.665, 0.68, -0.42, 1.84, M.black, { col: false, r: 0 }); // 窓枠ゴム
+    cyl(0.006, 0.006, 0.05, M.silver, sg * 0.64, 0.665, 0.30, "y");               // ロックピン
+    cyl(0.012, 0.012, 0.012, M.black, sg * 0.64, 0.7, 0.30, "y");
+    B(sg > 0 ? 0.64 : -0.66, sg > 0 ? 0.66 : -0.64, 0.52, 0.575, 0.34, 0.52, M.plasticBk, { col: false });   // ハンドルの窪み
+    B(x0 + 0.01, x1 - 0.01, 0.57, 0.585, -0.38, 0.52, M.chrome, { col: false, r: 0 });                        // 細い加飾
+  });
+  // 荷室: フック・ネット・トノカバー
+  [[-0.58, 1.75], [0.58, 1.75], [-0.58, 1.95], [0.58, 1.95]].forEach(([x, z]) => B(x - 0.015, x + 0.015, 0.34, 0.36, z - 0.015, z + 0.015, M.chrome, { col: false }));
+  B(-0.60, 0.60, 0.68, 0.70, 1.62, 1.97, M.plasticMid, { col: false });
+  // 天井: マップランプと、バイザーのミラー
+  [-0.1, 0.1].forEach((x) => B(x - 0.04, x + 0.04, 1.09, 1.105, -0.12, -0.04, M.white, { col: false }));
+  [-0.36, 0.36].forEach((x) => B(x - 0.07, x + 0.07, 1.07, 1.076, -0.275, -0.2, M.silver, { col: false, r: 0 }));
+  // ペダル周りのフロアのでこぼこ(カーペットの段差)
+  B(-0.60, 0.60, 0.0, 0.015, -0.80, -0.64, M.carpet, { col: false });
+
   // ================= 白いスイッチ(広場) =================
   // 地面は main.js の白い床。ここでは室内の明かり
   const lights = [];
@@ -321,9 +443,56 @@ export function buildSwift(THREE, scene) {
   inner.position.set(0, uy(0.9), uz(0.4));
   car.add(inner); lights.push(inner);
 
+
+  // ================= 同じ材質の部品を1つにまとめる(描画を軽くする) =================
+  (function mergeStatic() {
+    car.updateMatrixWorld(true);
+    const list = [];
+    car.traverse((o) => { if (o.isMesh && o.geometry && o.material && !(o.material.transparent) && !(Array.isArray(o.material) && o.material.some((m) => m.transparent))) list.push(o); });
+    const buckets = new Map();
+    const bucket = (m) => { let b = buckets.get(m); if (!b) { b = { m, pos: [], nor: [], uv: [], idx: [], n: 0 }; buckets.set(m, b); } return b; };
+    const v = new T.Vector3(), nm = new T.Matrix3();
+    for (const o of list) {
+      const g = o.geometry, pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv, index = g.index;
+      nm.getNormalMatrix(o.matrixWorld);
+      const groups = Array.isArray(o.material) ? g.groups : [{ start: 0, count: index ? index.count : pos.count, materialIndex: 0 }];
+      // 頂点ごとの所属先(どの材質の面か)
+      const owner = new Int16Array(pos.count).fill(-1);
+      for (const gr of groups) for (let k = gr.start; k < gr.start + gr.count; k++) owner[index ? index.getX(k) : k] = gr.materialIndex;
+      const base = new Map();
+      for (let i = 0; i < pos.count; i++) {
+        if (owner[i] < 0) continue;
+        const mat = Array.isArray(o.material) ? o.material[owner[i]] : o.material, b = bucket(mat);
+        if (!base.has(owner[i])) base.set(owner[i], new Map());
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        b.pos.push(v.x, v.y, v.z);
+        v.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
+        b.nor.push(v.x, v.y, v.z);
+        b.uv.push(uv.getX(i), uv.getY(i));
+        base.get(owner[i]).set(i, b.n++);
+      }
+      for (const gr of groups) {
+        const mat = Array.isArray(o.material) ? o.material[gr.materialIndex] : o.material, b = bucket(mat), mp = base.get(gr.materialIndex);
+        for (let k = gr.start; k < gr.start + gr.count; k++) b.idx.push(mp.get(index ? index.getX(k) : k));
+      }
+    }
+    for (const o of list) { o.parent.remove(o); o.geometry.dispose(); }
+    for (const b of buckets.values()) {
+      const g = new T.BufferGeometry();
+      g.setAttribute("position", new T.Float32BufferAttribute(b.pos, 3));
+      g.setAttribute("normal", new T.Float32BufferAttribute(b.nor, 3));
+      g.setAttribute("uv", new T.Float32BufferAttribute(b.uv, 2));
+      g.setIndex(b.n > 65535 ? new T.Uint32BufferAttribute(b.idx, 1) : new T.Uint16BufferAttribute(b.idx, 1));
+      car.add(new T.Mesh(g, b.m));
+    }
+  })();
+
   // ================= メーター(3画面) =================
   const gauges = createGauges(THREE, car, { ux, uy, uz, S, M, tubes: null });
 
+  car.traverse((o) => {
+    if (o.isMesh) { const t = o.material && o.material.transparent; o.castShadow = !t; o.receiveShadow = true; }
+  });
   const spawn = { x: 0, y: uy(0.60) + 0.02, z: uz(-0.62), yaw: Math.PI, pitch: 0 };
   return { colliders, gauges, spawn, group: car };
 }
