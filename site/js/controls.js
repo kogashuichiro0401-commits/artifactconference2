@@ -2,15 +2,15 @@
 //  歩く 4.32/ダッシュ 5.6/しゃがみ 1.31、ジャンプ 9・重力 32、飛行 10.9(ダッシュ 21)、
 //  落下中にSpaceでエリトラ(1tick=0.05秒ごとの揚力・急降下で加速)、左クリックでロケット花火、
 //  F5で視点切り替え、ホイールでズーム(視野角をせまく)、視点移動 0.0035/ズーム倍率。
-import { BOUND, YMAX } from "./shared.js";
+import { N, YMIN, YN } from "./shared.js";
 
 const HW = 0.3;               // 体の半分の幅
 const VMAX = 40;              // エリトラの最高速度
 const GAME = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "F5", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
 export class Controls {
-  constructor({ colliders, spawn, win, doc, say }) {
-    this.boxes = colliders;
+  constructor({ world, spawn, win, doc, say }) {
+    this.world = world;
     this.spawn = spawn;
     this.say = say || (() => {});
     this.cfg = { ely: true, rks: true, rkt: 2, rka: 30 };   // エリトラ / ロケット(あり・時間・加速度)
@@ -92,13 +92,7 @@ export class Controls {
     }
   }
 
-  hits(x, y, z, h) {
-    for (let k = 0; k < this.boxes.length; k++) {
-      const b = this.boxes[k];
-      if (x + HW > b[0] && x - HW < b[3] && z + HW > b[2] && z - HW < b[5] && y + h > b[1] && y < b[4]) return b;
-    }
-    return null;
-  }
+  hits(x, y, z, h) { return this.world.hits(x, y, z, h); }
 
   // マイクラのエリトラ(1秒に20回の計算): 揚力・急降下で加速・上向きで減速・向いた方へ勢いが曲がる
   glideTick(dt, v) {
@@ -161,9 +155,11 @@ export class Controls {
     p.ground = false;
     const b = this.hits(p.x, ny, p.z, h);
     if (b) { if (p.vy < 0) { ny = b[4]; p.ground = true; } else ny = b[1] - h; p.vy = 0; }
-    if (ny <= 0) { ny = 0; if (p.vy < 0) p.vy = 0; p.ground = true; }
-    p.y = Math.min(ny, YMAX);
-    p.x = Math.max(-BOUND, Math.min(BOUND, p.x)); p.z = Math.max(-BOUND, Math.min(BOUND, p.z));
+    p.y = ny;
+    // 世界はループ: はしを越えたら、反対がわから出る(上下も)
+    if (p.x >= N - 0.5) p.x -= N; else if (p.x < -0.5) p.x += N;
+    if (p.z >= N - 0.5) p.z -= N; else if (p.z < -0.5) p.z += N;
+    if (p.y < YMIN - 0.5) p.y += YN; else if (p.y >= YMIN + YN - 0.5) p.y -= YN;
     if (p.glide && p.ground) { p.glide = false; p.boost = 0; }
     if (p.fly && p.ground && keys.Shift) p.fly = false;
     // 体の向き(三人称視点で見える)

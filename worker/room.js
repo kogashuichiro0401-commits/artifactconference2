@@ -1,7 +1,7 @@
 // ゲームの「部屋」。全員の接続を預かり、位置を配る。
 // 各プレイヤーの情報は、接続(WebSocket)にくっつけて持つ(休止から起きても消えない)。
 import { VERSION } from "../site/js/version.js";
-import { BOUND, YMAX, NAME_MAX } from "../site/js/shared.js";
+import { N, YMIN, YN, BLOCK, NAME_MAX, REACH, mod, defaultCell, inRangeY, keyOf, wrapDelta } from "../site/js/shared.js";
 import { verifyToken } from "./site.js";
 
 const MAX_PLAYERS = 8;
@@ -18,9 +18,9 @@ function cleanName(s) {
 // 届いた位置・向きを検査して、安全な値にそろえる(世界の外や、数でない値は直す)
 function pose(m, base) {
   return {
-    x: r2(num(m.x, -BOUND, BOUND, base?.x ?? 0)),
-    y: r2(num(m.y, -5, YMAX, base?.y ?? 30)),
-    z: r2(num(m.z, -BOUND, BOUND, base?.z ?? 0)),
+    x: r2(num(m.x, -1, N, base?.x ?? N / 2)),
+    y: r2(num(m.y, YMIN - 1, YMIN + YN + 1, base?.y ?? 0.5)),
+    z: r2(num(m.z, -1, N, base?.z ?? N / 2)),
     yaw: r2(num(m.yaw, -1000, 1000, base?.yaw ?? 0)),
     pitch: r2(num(m.pitch, -1.6, 1.6, base?.pitch ?? 0)),
     fly: m.fly === true,
@@ -38,6 +38,46 @@ export class Room {
     this.env = env;
     // "ping" には、部屋を起こさずに "pong" を返す(つなぎっぱなしを保つため)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+    // 建築の変更(はじめの世界との差)を、保存してあるものから読み込む
+    this.edits = new Map();   // "x,y,z" → セルの値
+    ctx.blockConcurrencyWhile(async () => {
+      const all = await ctx.storage.list({ prefix: "e:" });
+      for (const [k, v] of all) this.edits.set(k.slice(2), v);
+    });
+  }
+
+  cellValue(x, y, z) {
+    const k = keyOf(x, y, z);
+    return this.edits.has(k) ? this.edits.get(k) : defaultCell(x, y, z);
+  }
+
+  setCell(x, y, z, v) {
+    const k = keyOf(x, y, z);
+    if (v === defaultCell(x, y, z)) { this.edits.delete(k); this.ctx.storage.delete("e:" + k); }
+    else { this.edits.set(k, v); this.ctx.storage.put("e:" + k, v); }
+  }
+
+  // 建築・破壊の依頼を確かめて、よければ反映して全員に知らせる
+  handleEdit(ws, a, m) {
+    if (!a.admin) return this.send(ws, { t: "deny", why: "権限がありません(管理者だけが建築・破壊できます)" });
+    const now = Date.now();
+    if (now - (a.editAt || 0) < 40) return;
+    a.editAt = now;
+    ws.serializeAttachment(a);
+    const x = Math.floor(Number(m.x)), y = Math.floor(Number(m.y)), z = Math.floor(Number(m.z));
+    if (![x, y, z].every(Number.isFinite) || x < 0 || x >= N || z < 0 || z >= N || !inRangeY(y)) return;
+    // 手の届く距離(世界のループを考える)
+    const dx = wrapDelta(a.x, x, N), dz = wrapDelta(a.z, z, N), dy = wrapDelta(a.y + 1, y, YN);
+    if (Math.hypot(dx, dy, dz) > REACH + 3) return;
+    const cur = this.cellValue(x, y, z);
+    let v = cur;
+    if (m.op === "b+") { if (cur !== 0) return; v = BLOCK; }
+    else if (m.op === "b-") { if (!(cur & BLOCK)) return; v = 0; }
+    else if (m.op === "p+") { const i = m.i | 0; if (i < 0 || i > 11 || (cur & BLOCK) || (cur & (1 << i))) return; v = cur | (1 << i); }
+    else if (m.op === "p-") { const i = m.i | 0; if (i < 0 || i > 11 || (cur & BLOCK) || !(cur & (1 << i))) return; v = cur & ~(1 << i); }
+    else return;
+    this.setCell(x, y, z, v);
+    this.broadcast({ t: "edit", x, y, z, v });
   }
 
   async fetch(request) {
@@ -71,7 +111,7 @@ export class Room {
   }
 
   async webSocketMessage(ws, message) {
-    if (typeof message !== "string" || message.length > 500) return;
+    if (typeof message !== "string" || message.length > 600) return;
     let m;
     try { m = JSON.parse(message); } catch (e) { return; }
     if (!m || typeof m !== "object") return;
@@ -100,9 +140,11 @@ export class Room {
         try { ws.close(1000, "full"); } catch (e) { /* すでに閉じている */ }
         return;
       }
-      const me = { id: crypto.randomUUID().slice(0, 8), uid: user.uid, name: cleanName(user.name), ...pose(m), at: 0 };
+      const me = { id: crypto.randomUUID().slice(0, 8), uid: user.uid, name: cleanName(user.name), admin: !!user.admin, ...pose(m), at: 0 };
       ws.serializeAttachment(me);
-      this.send(ws, { t: "welcome", id: me.id, name: me.name, version: VERSION, max: MAX_PLAYERS, players: list.map((p) => pub(p.a)) });
+      const edits = [];
+      for (const [k, v] of this.edits) { const [ex, ey, ez] = k.split(",").map(Number); edits.push([ex, ey, ez, v]); }
+      this.send(ws, { t: "welcome", id: me.id, name: me.name, admin: me.admin, version: VERSION, max: MAX_PLAYERS, players: list.map((p) => pub(p.a)), edits });
       this.broadcast({ t: "join", p: pub(me) }, ws);
       return;
     }
@@ -115,6 +157,8 @@ export class Room {
       Object.assign(a, pose(m, a), { at: now });
       ws.serializeAttachment(a);
       this.broadcast(posMsg(a), ws);
+    } else if (m.t === "edit") {
+      this.handleEdit(ws, a, m);
     }
   }
 

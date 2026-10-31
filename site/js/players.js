@@ -1,3 +1,4 @@
+import { N, YN, wrapDelta } from "./shared.js";
 // プレイヤーの体(自分の三人称視点・ほかの人)。マイクラと同じ、箱でできた体。エリトラつき。
 const SHIRTS = ["#3f7fd0", "#d04f4f", "#4fb06a", "#d0a43f", "#8a5fd0", "#d06fa8", "#3fb0b0", "#e07a3f"];
 const PX = 1.8 / 32;
@@ -74,7 +75,9 @@ export class RemotePlayers {
     this.T = THREE;
     this.scene = scene;
     this.map = new Map();
+    this.viewer = { x: 0, y: 0, z: 0 };
   }
+  setViewer(p) { this.viewer = p; }
 
   makeTag(name) {
     const T = this.T;
@@ -128,7 +131,8 @@ export class RemotePlayers {
   setPos(m) {
     const e = this.map.get(m.id);
     if (!e) return;
-    e.tgt = { x: m.x, y: m.y, z: m.z, yaw: m.yaw, pitch: m.pitch };
+    const c = e.cur;
+    e.tgt = { x: c.x + wrapDelta(c.x, m.x, N), y: c.y + wrapDelta(c.y, m.y, YN), z: c.z + wrapDelta(c.z, m.z, N), yaw: m.yaw, pitch: m.pitch };
     e.flags = { fly: !!m.fly, sneak: !!m.sneak, glide: !!m.glide };
   }
   setName(id, name) {
@@ -154,7 +158,8 @@ export class RemotePlayers {
       else if (moving) e.bodyYaw += dy * (1 - Math.exp(-12 * dt));
       else if (Math.abs(dy) > 0.9) e.bodyYaw = c.yaw - Math.sign(dy) * 0.9;
       e.av.pose({ hs: e.speed, bodyYaw: e.bodyYaw, yaw: c.yaw, pitch: c.pitch, glide: f.glide, fly: f.fly, sneak: f.sneak, air: f.fly || f.glide }, dt);
-      e.av.root.position.set(c.x, c.y, c.z);
+      const v = this.viewer;   // 世界はループしているので、自分にいちばん近い位置に出す
+      e.av.root.position.set(v.x + wrapDelta(v.x, c.x, N), v.y + wrapDelta(v.y, c.y, YN), v.z + wrapDelta(v.z, c.z, N));
       e.tag.position.y = f.sneak ? 2.0 : 2.2;
     }
   }

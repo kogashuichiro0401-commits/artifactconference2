@@ -6,6 +6,10 @@ import { RemotePlayers, createAvatar } from "./players.js";
 import { createFirstPerson } from "./fp.js";
 import { restore, login, logout, getToken } from "./auth.js";
 import { VERSION } from "./version.js";
+import { World, buildChunk, CH } from "./world.js";
+import { BuildTool } from "./build.js";
+import { N, YMIN, YN, BLOCK, mod } from "./shared.js";
+import { PLATE_NAMES } from "./plates.js";
 
 const THREE = window.THREE;
 const canvas = document.getElementById("view");
@@ -27,8 +31,8 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
-scene.fog = new THREE.Fog(SKY, 500, 2600);
-const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 4000);
+scene.fog = new THREE.Fog(SKY, 70, 190);
+const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 400);
 camera.rotation.order = "YXZ";
 
 scene.add(new THREE.HemisphereLight(0xdfeeff, 0x9aa3ae, 0.62));
@@ -42,12 +46,31 @@ sun.shadow.bias = -0.0006;
 sun.shadow.normalBias = 0.05;
 scene.add(sun, sun.target);
 
-// 床: 真っ白で平ら。空は青
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.MeshLambertMaterial({ color: 0xffffff }));
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
-const world = { colliders: [], spawn: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 } };
+// ----- 世界: ブロックとプレート。横・縦ともにループするので、まわりに27個のコピーを並べて、切れ目なく見せる -----
+const world = new World();
+world.spawn = { x: N / 2, y: 0.5, z: N / 2, yaw: 0, pitch: 0 };
+const worldMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+const NC = N / CH;
+const offsets = [];
+for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) offsets.push([dx * N, dy * YN, dz * N]);
+const chunkMeshes = [];
+for (let i = 0; i < NC * NC; i++) {
+  chunkMeshes.push(offsets.map((o) => { const m = new THREE.Mesh(new THREE.BufferGeometry(), worldMat); m.position.set(o[0], o[1], o[2]); m.visible = false; scene.add(m); return m; }));
+  world.dirty.add(i);
+}
+function rebuildDirty() {
+  for (const ci of world.dirty) {
+    const d = buildChunk(world, Math.floor(ci / NC), ci % NC);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(d.pos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(d.col, 3));
+    g.setIndex(new THREE.BufferAttribute(d.idx, 1));
+    g.computeBoundingSphere();
+    for (const m of chunkMeshes[ci]) { m.geometry.dispose(); m.geometry = g; m.visible = d.idx.length > 0; }
+  }
+  world.dirty.clear();
+}
+rebuildDirty();
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -60,8 +83,10 @@ resize();
 
 // ----- 操作 -----
 let hud;
-const controls = new Controls({ colliders: world.colliders, spawn: world.spawn, win: window, doc: document, say: (t) => hud && hud.say(t) });
+const controls = new Controls({ world, spawn: world.spawn, win: window, doc: document, say: (t) => hud && hud.say(t) });
 const firstPerson = createFirstPerson(THREE, camera, scene, controls);
+const build = new BuildTool(THREE, scene, world);
+let isAdmin = false, buildMode = false;
 const me3d = createAvatar(THREE, "#c0392b");
 scene.add(me3d.root);
 function applySettings() {
@@ -91,14 +116,16 @@ hud = createHud({
   onLogout: async () => {
     await logout();
     net.stop(); netStarted = false; remotes.clear();
-    user = null; netState = "idle"; refreshOnline();
+    user = null; isAdmin = false; buildMode = false; hud.setAdmin(false); hud.setBuildMode(false);
+    netState = "idle"; refreshOnline();
     setPanel("login");
   },
 });
 
 function signedIn(u) {
   user = u;
-  hud.setUser(u);
+  isAdmin = u.role === "admin"; buildMode = false;
+  hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(false);
   setPanel("menu");
 }
 
@@ -132,6 +159,10 @@ const net = new Net({
     everConnected = true;
     netState = "open";
     myName = m.name || "";
+    isAdmin = !!m.admin;
+    if (!isAdmin) { buildMode = false; hud.setBuildMode(false); }
+    hud.setAdmin(isAdmin);
+    for (const e of m.edits || []) world.set(e[0], e[1], e[2], e[3]);   // みんなが作った建築を反映
     remotes.clear();
     for (const p of m.players) remotes.add(p);
     if (m.version !== VERSION) hud.setUpdate(m.version);   // 古い画面のまま遊んでいる
@@ -141,6 +172,8 @@ const net = new Net({
   onJoin: (p) => { remotes.add(p); refreshOnline(); },
   onLeave: (id) => { remotes.remove(id); refreshOnline(); },
   onPos: (m) => remotes.setPos(m),
+  onEdit: (m) => world.set(m.x, m.y, m.z, m.v),
+  onDeny: (m) => hud.say(m.why || "できません"),
   onName: (m) => { remotes.setName(m.id, m.name); refreshOnline(); },
   onFull: () => { netState = "full"; refreshOnline(); },
   onAuth: () => {   // ログインが無効になった(期限切れなど)
@@ -192,8 +225,20 @@ document.addEventListener("pointerlockchange", () => {
 document.addEventListener("pointerlockerror", () => { if (!panel) hud.setResume(true); });
 
 canvas.addEventListener("click", () => { if (!panel && !locked) requestLock(); });
+const wrapCell = (c) => [mod(c[0], N), YMIN + mod(c[1] - YMIN, YN), mod(c[2], N)];
 window.addEventListener("mousedown", (e) => {
   if (!locked || panel || controls.p.glide) return;
+  if (buildMode && isAdmin) {
+    if (!net.ready()) { hud.say("オフラインのときは、建築・破壊できません"); return; }
+    if (e.button === 0 && build.target) {   // 左クリック = 壊す
+      const t = build.target, c = wrapCell(t.cell);
+      net.sendEdit(t.kind === "block" ? "b-" : "p-", c[0], c[1], c[2], t.plate);
+    } else if (e.button === 2 && build.place) {   // 右クリック = 置く
+      const pl = build.place, c = wrapCell([pl.x, pl.y, pl.z]);
+      net.sendEdit(pl.kind === "block" ? "b+" : "p+", c[0], c[1], c[2], pl.i);
+    }
+    return;
+  }
   if ((e.button === 0 || e.button === 2) && hud.selectedItem() === "book") setPanel("book");
 });
 window.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -215,6 +260,14 @@ window.addEventListener("keydown", (e) => {
     else if (!panel && locked) setPanel("inventory");
     return;
   }
+  if (e.code === "F4") {
+    e.preventDefault();
+    if (!isAdmin) { hud.say("権限がありません(建築・破壊は管理者だけです)"); return; }
+    buildMode = !buildMode; hud.setBuildMode(buildMode);
+    hud.say(buildMode ? "建築破壊モード: 左クリック=壊す / 右クリック=置く" : "通常モード");
+    return;
+  }
+  if (e.code === "KeyC" && !panel && locked && buildMode) { hud.say("プレートの置き方: " + build.cycleMode()); return; }
   if (e.code === "KeyR" && !panel && locked) { controls.respawn(); hud.say("スタート地点にもどりました"); return; }
   if (e.code === "F3") { e.preventDefault(); hud.toggleDebug(); return; }
   if (panel && panel !== "inventory") return;
@@ -244,7 +297,11 @@ function frame(t) {
   }
   firstPerson(dt);
   remotes.update(dt);
-  floor.position.set(camera.position.x, 0, camera.position.z);
+  if (world.dirty.size) rebuildDirty();
+  remotes.setViewer({ x: p.x, y: p.y, z: p.z });
+  const dirv = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
+  if (panel) { build.outline.visible = build.ghost.visible = build.ghostLine.visible = false; build.target = build.place = null; }
+  else build.update(eye, dirv, buildMode && isAdmin, hud.selectedItem(), [p.x - 0.3, p.y, p.z - 0.3, p.x + 0.3, p.y + controls.curH(), p.z + 0.3]);
   const kmh = Math.hypot(p.vx, p.vy, p.vz) * 3;
   renderer.render(scene, camera);
   sendPose(t);
@@ -253,12 +310,25 @@ function frame(t) {
   dbgT += dt;
   if (dbgT > 0.25) {
     dbgT = 0;
-    hud.setDebug(`v${VERSION}\nXYZ ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${p.z.toFixed(1)}\nFPS ${fps.toFixed(0)}  ${kmh.toFixed(0)}km/h${p.fly ? "\n飛行中" : ""}${p.glide ? "\n滑空中" : ""}\n通信 ${netState}`);
+    const yawDeg = ((((-p.yaw * 180) / Math.PI) % 360) + 360) % 360;   // 北(-z)が0度、東(+x)が90度
+    const face = ["北 (-z)", "東 (+x)", "南 (+z)", "西 (-x)"][Math.round(yawDeg / 90) % 4];
+    const tg = build.target;
+    const look = tg ? (tg.kind === "block" ? `ブロック ${wrapCell(tg.cell).join(" ")}` : `プレート ${PLATE_NAMES[tg.plate]} @ ${wrapCell(tg.cell).join(" ")}`) : "なし";
+    hud.setDebug([
+      `artifact学会。 3D v${VERSION}   ${fps.toFixed(0)} fps`,
+      `XYZ: ${p.x.toFixed(3)} / ${p.y.toFixed(3)} / ${p.z.toFixed(3)}`,
+      `ブロック: ${mod(Math.round(p.x), N)} ${Math.floor(p.y + 0.5 + 1e-6)} ${mod(Math.round(p.z), N)}   (世界 ${N}x${YN}x${N}、ループ)`,
+      `向き: ${face}  (yaw ${yawDeg.toFixed(1)} / pitch ${((-p.pitch * 180) / Math.PI).toFixed(1)})`,
+      `見ている先: ${look}`,
+      `権限: ${isAdmin ? "管理者" : "泳者"}   モード: ${buildMode ? "建築破壊" : "通常"}${buildMode ? `   プレート: ${["自動", "面だけ", "斜めだけ"][build.plateMode]}` : ""}`,
+      `速さ: ${kmh.toFixed(0)}  ${p.fly ? "飛行中 " : ""}${p.glide ? "滑空中 " : ""}${p.sprint ? "ダッシュ " : ""}${p.sneak ? "しゃがみ" : ""}`,
+      `通信: ${netState}`,
+    ].join("\n"));
   }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { controls, scene, camera, hud };
+window.__craft = { controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });

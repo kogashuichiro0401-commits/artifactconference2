@@ -2,7 +2,7 @@
 import { VERSION } from "./version.js";
 
 export class Net {
-  // h = { token(), pose(), onStatus(s), onReset(), onWelcome(m), onJoin(p), onLeave(id), onPos(m), onName(m), onFull(), onAuth(), onKicked() }
+  // h = { token(), pose(), onStatus(s), onReset(), onWelcome(m), onJoin(p), onLeave(id), onPos(m), onName(m), onFull(), onAuth(), onKicked(), onEdit(m), onDeny(m) }
   constructor(h) {
     this.h = h;
     this.ws = null;
@@ -30,6 +30,10 @@ export class Net {
 
   send(obj) {
     if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(obj));
+  }
+
+  sendEdit(op, x, y, z, i) {
+    this.send({ t: "edit", op, x, y, z, i });
   }
 
   sendPos(p) {
@@ -83,6 +87,8 @@ export class Net {
       case "leave": this.h.onLeave(m.id); break;
       case "pos": if (m.id !== this.id) this.h.onPos(m); break;
       case "name": this.h.onName(m); break;
+      case "edit": this.h.onEdit(m); break;
+      case "deny": this.h.onDeny(m); break;
       case "auth": this.wanted = false; this.h.onAuth(); break;
       case "kicked": this.wanted = false; this.h.onKicked(); break;
       case "full": this.full = true; this.wanted = false; this.h.onFull(); break;

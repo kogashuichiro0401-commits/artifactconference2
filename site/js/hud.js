@@ -30,6 +30,9 @@ const BOOK = `
     <li>落下している間に <b>Space</b>…エリトラが開いて、滑空できる。急降下で加速、上向きで減速。もう一度 Space で閉じる</li>
     <li>滑空中の<b>左クリック</b>…ロケット花火で加速する</li>
     <li><b>マウス</b>…見る方向。<b>ホイール</b>…ズーム。<b>F5</b>…視点の切り替え(一人称/後ろ/前)</li>
+    <li><b>十字の先</b>のブロック/プレートは、黒い細い枠で囲まれる</li>
+    <li>(管理者だけ)<b>F4</b>…建築破壊モード。<b>左クリック</b>=壊す、<b>右クリック</b>=置く(白いブロック/プレートを持っているとき)。プレートは、目線に垂直な向きのものが薄く表示されて置かれる。<b>C</b>…プレートの置き方(自動/面だけ/斜めだけ)</li>
+    <li><b>F3</b>…座標などの情報。世界は64×64×64で、はしは反対側につながっている(上下も)</li>
     <li><b>1〜9</b>…手に持つものを変える。<b>E</b>…持ち物。<b>Esc</b>…メニュー</li>
   </ul>`;
 
@@ -38,6 +41,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
   const inv = new Array(36).fill(null);   // 0〜8がホットバー
   inv[0] = "bow";
   inv[1] = "book";
+  const setItems = (admin) => { inv[2] = admin ? "block" : null; inv[3] = admin ? "plate" : null; };
   let sel = 0, hp = 20, nameTimer = 0, entered = false, updateVer = null, user = null, sayTimer = 0;
 
   // ----- ハート(体力は0〜20。1つのハートが2) -----
@@ -139,7 +143,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     $("panel-menu").innerHTML = `
       ${brand("v" + VERSION)}
       ${notice}
-      <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}</span><button class="pill" id="btn-logout">ログアウト</button></div>
+      <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}<span class="role">${user && user.role === "admin" ? "管理者" : "泳者"}</span></span><button class="pill" id="btn-logout">ログアウト</button></div>
       <button class="pill primary block" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
       <button class="pill block" id="btn-respawn">スタート地点にもどる (R)</button>
       <h2>設定</h2>
@@ -150,6 +154,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
         <li>WASD=移動　Space=ジャンプ(2回=飛行、飛行中 Space↑ Shift↓)　W/Sを2回=ダッシュ　Shift=しゃがみ</li>
         <li>落下中に Space=エリトラ(もう一度で終了)、滑空中の左クリック=ロケット花火</li>
         <li>F5=視点　ホイール=ズーム　1〜9=持ち物　E=持ち物の画面　F3=座標表示　Esc=メニュー</li>
+        <li>管理者: F4=建築破壊モード(左=壊す・右=置く)　C=プレートの置き方</li>
       </ul>
       <h2>更新履歴</h2>
       <ul class="log">${log}</ul>`;
@@ -191,6 +196,9 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     selectedItem: () => inv[sel],
     show,
     renderLogin,
+    // 管理者だけ、白いブロック・プレートを持てる
+    setAdmin: (a) => { setItems(a); renderHotbar(); select(sel); },
+    setBuildMode: (on) => { $("mode").hidden = !on; $("mode").textContent = "建築破壊モード(F4で切り替え)"; },
     setUser: (u) => { user = u; entered = false; },
     say: (text) => {
       const el = $("say");
