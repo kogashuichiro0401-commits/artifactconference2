@@ -76,7 +76,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     slotEls.forEach((el, i) => {
       const it = itemAt(i);
       el.className = "slot" + (i === sel ? " sel" : "");
-      el.innerHTML = `<span class="n">${i + 1}</span>${it ? esc(it.icon) : ""}`;
+      el.innerHTML = it ? it.icon : "";
     });
   }
   function select(i) {
@@ -95,7 +95,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
 
   // ----- 持ち物 -----
   function renderInventory() {
-    const slot = (i) => { const it = itemAt(i); return `<div class="slot">${it ? esc(it.icon) : ""}</div>`; };
+    const slot = (i) => { const it = itemAt(i); return `<div class="slot">${it ? it.icon : ""}</div>`; };
     let main = "", bar = "";
     for (let i = 9; i < 36; i++) main += slot(i);
     for (let i = 0; i < 9; i++) bar += slot(i);

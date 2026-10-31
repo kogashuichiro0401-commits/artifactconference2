@@ -165,6 +165,17 @@ export class Room {
       this.broadcast(posMsg(a), ws);
     } else if (m.t === "edit") {
       this.handleEdit(ws, a, m);
+    } else if (m.t === "shoot") {
+      // 矢を撃った: 近くから、ふつうの速さで撃ったものだけ、ほかの全員に知らせる(飛び方は各画面で同じ計算)
+      const now = Date.now();
+      if (now - (a.shotAt || 0) < 250) return;
+      const v = ["x", "y", "z", "vx", "vy", "vz"].map((k) => Number(m[k]));
+      if (!v.every(Number.isFinite)) return;
+      const sp = Math.hypot(v[3], v[4], v[5]);
+      if (sp < 0.2 || sp > 3.2) return;   // 1tickあたり、最大3ブロック(マイクラと同じ)
+      if (Math.hypot(wrapDelta(a.x, v[0], N), wrapDelta(a.y, v[1], YN), wrapDelta(a.z, v[2], N)) > 6) return;
+      a.shotAt = now; ws.serializeAttachment(a);
+      this.broadcast({ t: "arrow", id: a.id, x: v[0], y: v[1], z: v[2], vx: v[3], vy: v[4], vz: v[5] }, ws);
     }
   }
 

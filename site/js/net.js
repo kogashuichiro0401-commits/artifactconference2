@@ -32,6 +32,10 @@ export class Net {
     if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(obj));
   }
 
+  sendShoot(pos, vel) {
+    this.send({ t: "shoot", x: pos[0], y: pos[1], z: pos[2], vx: vel[0], vy: vel[1], vz: vel[2] });
+  }
+
   sendEdit(op, x, y, z, i) {
     this.send({ t: "edit", op, x, y, z, i });
   }
@@ -88,6 +92,7 @@ export class Net {
       case "pos": if (m.id !== this.id) this.h.onPos(m); break;
       case "name": this.h.onName(m); break;
       case "edit": this.h.onEdit(m); break;
+      case "arrow": if (this.h.onArrow) this.h.onArrow(m); break;
       case "deny": this.h.onDeny(m); break;
       case "auth": this.wanted = false; this.h.onAuth(); break;
       case "kicked": this.wanted = false; this.h.onKicked(); break;

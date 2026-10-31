@@ -14,6 +14,20 @@ export function createFirstPerson(T, camera, scene, controls) {
   handL.visible = false; camera.add(handL);
   scene.add(camera);
 
+  // 弓: しなった弓と、弦、つがえた矢。ためるほど弦が手前に引かれる
+  const bow = new T.Group();
+  const woodM = new T.MeshBasicMaterial({ color: 0x8a5a2b }), strM = new T.MeshBasicMaterial({ color: 0xf0f0f0 }), arrM = new T.MeshBasicMaterial({ color: 0xc9a468 }), tipM = new T.MeshBasicMaterial({ color: 0x8d9096 });
+  bow.add(new T.Mesh(new T.TubeGeometry(new T.QuadraticBezierCurve3(new T.Vector3(0, 0.46, 0.0), new T.Vector3(0, 0, -0.34), new T.Vector3(0, -0.46, 0.0)), 14, 0.022, 6), woodM));
+  const seg = (m) => { const g = new T.Mesh(new T.CylinderGeometry(1, 1, 1, 4), m); bow.add(g); return g; };
+  const strA = seg(strM), strB = seg(strM);
+  const place = (g, a, b, r) => { const d = b.clone().sub(a), L = d.length(); g.position.copy(a).addScaledVector(d, 0.5); g.scale.set(r, L, r); g.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize()); };
+  const arrow = new T.Mesh(new T.BoxGeometry(0.018, 0.018, 0.72), arrM); bow.add(arrow);
+  const arrowHead = new T.Mesh(new T.ConeGeometry(0.035, 0.1, 6), tipM); arrowHead.rotation.x = -Math.PI / 2; bow.add(arrowHead);
+  bow.position.set(0.32, -0.2, -0.6); bow.rotation.set(0.05, 0.12, 0.0);
+  bow.scale.setScalar(0.72);
+  bow.visible = false; camera.add(bow);
+  const tipTop = new T.Vector3(0, 0.46, 0), tipBot = new T.Vector3(0, -0.46, 0), nock = new T.Vector3();
+
   const sparks = [], mats = [0xffb02e, 0xff6a1a, 0xcfcfcf].map((c) => new T.MeshBasicMaterial({ color: c, transparent: true }));
   const geo = new T.BoxGeometry(1, 1, 1);
   for (let i = 0; i < 70; i++) {
@@ -22,9 +36,20 @@ export function createFirstPerson(T, camera, scene, controls) {
   }
   let si = 0, acc = 0;
 
-  return function update(dt) {
+  return function update(dt, bs) {
     const first = p.view === 0;
     hand.visible = first;
+    const showBow = first && bs && bs.held && !p.glide;
+    bow.visible = !!showBow;
+    if (showBow) {
+      const c = bs.charge || 0;
+      nock.set(0, 0, 0.02 + c * 0.34);
+      place(strA, tipTop, nock, 0.006); place(strB, tipBot, nock, 0.006);
+      arrow.visible = arrowHead.visible = c > 0;
+      arrow.position.set(0, 0, nock.z - 0.36); arrowHead.position.set(0, 0, nock.z - 0.76);
+      bow.position.set(0.32 - c * 0.1, -0.2 + c * 0.04, -0.6 + c * 0.05);
+      hand.visible = false;
+    }
     hand.rotation.x = 1.15 - Math.sin(p.t * 8) * Math.min(1, (controls.hs || 0) / 4.3) * 0.25;
     handL.visible = first && p.glide && controls.cfg.rks;
     if (handL.visible) {

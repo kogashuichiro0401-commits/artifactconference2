@@ -12,7 +12,9 @@ export function shade(n) {
 // 2. 空の光: 上にさえぎるものがなければ15。そこから横・下へ、1ブロックごとに1ずつ弱まりながら広がる
 // 3. ブロックの光: 光るもの(いまは無し)から、同じように広がる。 EMISSIVE[セルの値] = 明るさ(1〜15)
 export const EMISSIVE = new Map();
-const PLATE_COST = 4;   // プレートのあるセルを通ると、光はこれだけ余分に弱まる
+// プレートが空の光をさえぎる強さ(上から下へ通るときだけ)。上をおおう板ほど強く、立てた板は通す
+const PLATE_SKY = PLATES.map((p) => (p.diag ? Math.round(Math.abs(p.n[1]) * 3) : Math.abs(p.n[1]) > 0.5 ? 3 : 0));
+const skyCost = (v) => { let c = 0; for (let i = 0; i < 12; i++) if ((v & (1 << i)) && PLATE_SKY[i] > c) c = PLATE_SKY[i]; return c; };
 // 光のレベル(0〜15) → 明るさのかけ算。1段ごとに約0.9倍
 const LIGHT_F = Array.from({ length: 16 }, (_, l) => Math.pow(0.9, 15 - l));
 // 4. 角のかげ(AO): ブロックの角・くぼみの頂点を、すこし暗くする
@@ -42,14 +44,14 @@ export class World {
     const cells = this.cells, light = this.light || (this.light = new Uint8Array(cells.length));
     light.fill(0);
     const buckets = Array.from({ length: 16 }, () => []);
-    const cost = (v) => (v & BLOCK ? -1 : v ? 1 + PLATE_COST : 1);   // 広がるときの弱まり方(-1=通れない)
+    const cost = (v) => (v & BLOCK ? -1 : 1);   // 広がるときの弱まり方(-1=通れない)。プレートは横には通す
     // 空の光: 上から下へ。ブロックでさえぎられたら0、プレートを通ると弱まる
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       let lv = 15;
       for (let y = YMIN + YN - 1; y >= YMIN; y--) {
         const i = this.idx(x, y, z), v = cells[i];
         if (v & BLOCK) lv = 0;
-        else if (v) lv = Math.max(0, lv - PLATE_COST);
+        else if (v) lv = Math.max(0, lv - skyCost(v));
         light[i] = lv;
       }
     }
@@ -173,7 +175,7 @@ const FACES = [
 export function buildChunk(world, cx, cz) {
   if (world.lightDirty || !world.light) world.relight();
   const pos = [], col = [], idx = [];
-  const opq = (x, y, z) => { const v = world.get(x, y, z); return v & BLOCK ? 1 : v ? 0.5 : 0; };
+  const opq = (x, y, z) => (world.get(x, y, z) & BLOCK ? 1 : 0);   // 角のかげ(AO)は、ブロックだけで決める
   // プレートの面の明るさ: そのセルの光と、まわりの空いたセルの光(−1)の大きいほう(プレート自身のせいで暗くならないように)
   const plateLight = (x, y, z) => {
     let m = world.lightAt(x, y, z);
@@ -193,7 +195,7 @@ export function buildChunk(world, cx, cz) {
         if (world.get(fx, fy, fz) & BLOCK) continue;
         const s = shade(f.n), L0 = world.lightAt(fx, fy, fz), base = pos.length / 3, cc = [];
         const ax = f.n[0] ? 0 : f.n[1] ? 1 : 2, t1 = (ax + 1) % 3, t2 = (ax + 2) % 3;
-        const frontOcc = Math.min(1, opq(fx, fy, fz));   // 面の前のセルにプレートがあれば、その下(=この面)は暗い
+        const frontOcc = 0;
         for (const q of f.v) {
           const s1 = q[t1] > 0 ? 1 : -1, s2 = q[t2] > 0 ? 1 : -1;
           const P1 = [fx, fy, fz], P2 = [fx, fy, fz], PC = [fx, fy, fz];

@@ -4,6 +4,7 @@ import { createHud } from "./hud.js";
 import { Net } from "./net.js";
 import { RemotePlayers, createAvatar } from "./players.js";
 import { createFirstPerson } from "./fp.js";
+import { createArrows } from "./arrows.js";
 import { restore, login, logout, getToken } from "./auth.js";
 import { VERSION } from "./version.js";
 import { World, buildChunk, CH } from "./world.js";
@@ -135,6 +136,7 @@ resize();
 let hud;
 const controls = new Controls({ world, spawn: world.spawn, win: window, doc: document, say: (t) => hud && hud.say(t) });
 const firstPerson = createFirstPerson(THREE, camera, scene, controls);
+const arrows = createArrows(THREE, scene, world);
 const build = new BuildTool(THREE, scene, world);
 let isAdmin = false, buildMode = false;
 const me3d = createAvatar(THREE, "#c0392b");
@@ -247,6 +249,7 @@ const net = new Net({
   onJoin: (p) => { remotes.add(p); refreshOnline(); },
   onLeave: (id) => { remotes.remove(id); refreshOnline(); },
   onPos: (m) => remotes.setPos(m),
+  onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
   onEdit: (m) => world.set(m.x, m.y, m.z, m.v),
   onDeny: (m) => hud.say(m.why || "できません"),
   onName: (m) => { remotes.setName(m.id, m.name); refreshOnline(); },
@@ -323,8 +326,26 @@ function act(button) {
   }
   return null;
 }
+// ----- 弓: 右クリックを押しつづけてため、はなすと矢がとぶ -----
+let charge = null;   // { t0 }
+const chargeFrac = () => (charge ? Math.min(1, (performance.now() - charge.t0) / 1000) : 0);   // 1秒でいっぱい
+const chargeEl = document.getElementById("charge");
+function cancelCharge() { charge = null; chargeEl.hidden = true; }
+function releaseBow() {
+  if (!charge) return;
+  const f = chargeFrac(); cancelCharge();
+  const power = Math.min(1, (f * f + f * 2) / 3);   // マイクラと同じ式
+  if (power < 0.1) return;
+  const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
+  const pos = [eye[0] + L[0] * 0.5, eye[1] + L[1] * 0.5 - 0.1, eye[2] + L[2] * 0.5], vel = [L[0] * power * 3, L[1] * power * 3, L[2] * power * 3];
+  arrows.shoot(pos, vel);
+  if (net.ready()) net.sendShoot(pos, vel);
+}
+window.addEventListener("mouseup", (e) => { if (e.button === 2) releaseBow(); });
+window.addEventListener("blur", cancelCharge);
 window.addEventListener("mousedown", (e) => {
   if (!locked || panel || controls.p.glide) return;
+  if (e.button === 2 && hud.selectedItem() === "bow") { charge = { t0: performance.now() }; chargeEl.hidden = false; return; }
   if (buildMode && isAdmin) {
     if (e.button === 0 || e.button === 2) act(e.button);   // 1クリック=1回(長押しの連続はなし)
     return;
@@ -389,7 +410,11 @@ function frame(t) {
     me3d.pose({ hs: controls.hs || 0, bodyYaw: p.bodyYaw, yaw: p.yaw, pitch: p.pitch, glide: p.glide, fly: p.fly, sneak: p.sneak, sprint: p.sprint, air: !p.ground, rocket: p.boost > 0 }, dt);
     me3d.root.position.set(p.x, p.y, p.z);
   }
-  firstPerson(dt);
+  if (charge && (panel || !locked || controls.p.glide || hud.selectedItem() !== "bow")) cancelCharge();
+  const cf = chargeFrac();
+  if (charge) { chargeEl.firstChild.style.width = (cf * 100) + "%"; chargeEl.classList.toggle("full", cf >= 1); }
+  firstPerson(dt, { held: hud.selectedItem() === "bow" && !panel, charge: cf });
+  arrows.setViewer(controls.p); arrows.update(dt);
   remotes.update(dt);
   if (world.dirty.size) rebuildDirty(8);
   remotes.setViewer({ x: p.x, y: p.y, z: p.z });
@@ -429,5 +454,5 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act }, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
+window.__craft = { arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act }, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });
