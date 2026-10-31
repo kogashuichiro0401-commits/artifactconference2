@@ -77,7 +77,9 @@ export class Room {
     let v = cur;
     if (m.op === "b+") { if (cur !== 0) return; v = BLOCK; }
     else if (m.op === "b-") { if (!(cur & BLOCK)) return; v = 0; }
-    else if (m.op === "p+") { const i = m.i | 0; if (i < 0 || i > 11 || (cur & BLOCK) || (cur & (1 << i))) return; v = cur | (1 << i); }
+    else if (m.op === "p+") { const i = m.i | 0; if (i < 0 || i > 11 || (cur & BLOCK) || (cur & (1 << i))) return;
+      if (i >= 6 && (cur & 0xfc0)) return this.send(ws, { t: "deny", why: "斜めのプレートは、1つの座標に1つまでです" });
+      v = cur | (1 << i); }
     else if (m.op === "p-") { const i = m.i | 0; if (i < 0 || i > 11 || (cur & BLOCK) || !(cur & (1 << i))) return; v = cur & ~(1 << i); }
     else return;
     this.setCell(x, y, z, v);

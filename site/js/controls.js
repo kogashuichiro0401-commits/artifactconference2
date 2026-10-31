@@ -1,6 +1,6 @@
 // 操作。「講義がちる。」のマイクラモードと同じ動きをそのまま移したもの。
 //  歩く 4.32/ダッシュ 5.6/しゃがみ 1.31、ジャンプ 9・重力 32、飛行 10.9(ダッシュ 21)、
-//  落下中にSpaceでエリトラ(1tick=0.05秒ごとの揚力・急降下で加速)、左クリックでロケット花火、
+//  落下中にSpaceでエリトラ(1tick=0.05秒ごとの揚力・急降下で加速)、右クリックでロケット花火、
 //  F5で視点切り替え、ホイールでズーム(視野角をせまく)、視点移動 0.0035/ズーム倍率。
 import { N, YMIN, YN } from "./shared.js";
 
@@ -30,7 +30,7 @@ export class Controls {
     win.addEventListener("keyup", (e) => this.key(e, false));
     win.addEventListener("blur", () => this.release());
     doc.addEventListener("mousemove", (e) => this.mouse(e));
-    win.addEventListener("mousedown", (e) => { if (this.locked && e.button === 0 && this.p.glide && this.cfg.rks) this.fireRocket(e); }, true);
+    win.addEventListener("mousedown", (e) => { if (this.locked && e.button === 2 && this.p.glide && this.cfg.rks) this.fireRocket(e); }, true);
   }
 
   respawn() {
@@ -82,7 +82,7 @@ export class Controls {
         else {
           this.lastSp = now;
           if (p.glide) { p.glide = false; p.boost = 0; this.say("滑空を終えました(自由落下)"); }
-          else if (this.cfg.ely && !p.fly && !p.ground && p.vy < -1) { p.glide = true; this.say("エリトラが開きました(左クリック=ロケット花火)"); }
+          else if (this.cfg.ely && !p.fly && !p.ground && p.vy < -1) { p.glide = true; this.say("エリトラが開きました(右クリック=ロケット花火)"); }
         }
         this.kick = 1;
       }

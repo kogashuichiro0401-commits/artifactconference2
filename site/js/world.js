@@ -1,14 +1,34 @@
 // ブロックとプレートの世界(ブラウザ側)。保存・判定・光線・メッシュ作り。
-import { N, YMIN, YN, BLOCK, mod, defaultCell } from "./shared.js";
+import { N, YMIN, YN, BLOCK, mod, defaultCell, SUN } from "./shared.js";
 import { PLATES, T } from "./plates.js";
 
 const HW = 0.3;
 export const CH = 16;   // メッシュの区画の大きさ(横)
-const LIGHT = (() => { const l = [0.4, 0.8, 0.3], m = Math.hypot(...l); return l.map((v) => v / m); })();
-// 面の向きによる明るさ(上=1、横=0.75〜0.8、下=0.6)
+// 面の向きによる明るさ(太陽がわ=白、反対がわ=すこしだけ暗い)
 export function shade(n) {
-  const d = n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2];
-  return 0.85 + 0.15 * Math.min(1, Math.max(0, d) / LIGHT[1]);
+  const d = (n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]) / SUN[1];
+  return 0.84 + 0.16 * (Math.max(-1, Math.min(1, d)) * 0.5 + 0.5);
+}
+const SHADOW = 0.78;      // 影になった所の明るさ(かけ算)
+const SHADOW_LEN = 18;    // 影をさがす距離(太陽に向かって)
+
+// 点 o から太陽にむかう光が、ブロックやプレートにさえぎられるか
+function occluded(world, ox, oy, oz) {
+  const o = [ox, oy, oz], d = SUN;
+  const ix = [Math.floor(ox + 0.5), Math.floor(oy + 0.5), Math.floor(oz + 0.5)];
+  const step = [d[0] > 0 ? 1 : -1, d[1] > 0 ? 1 : -1, d[2] > 0 ? 1 : -1];
+  const tDelta = d.map((q) => (Math.abs(q) < 1e-9 ? Infinity : Math.abs(1 / q)));
+  const tMax = d.map((q, k) => (Math.abs(q) < 1e-9 ? Infinity : ((step[k] > 0 ? ix[k] + 0.5 : ix[k] - 0.5) - o[k]) / q));
+  for (let first = true; ; first = false) {
+    const v = world.get(ix[0], ix[1], ix[2]);
+    if (v) {
+      if (v & BLOCK) { if (!first) return true; }
+      else for (let i = 0; i < 12; i++) if ((v & (1 << i)) && rayPlate(o, d, ix, PLATES[i])) return true;
+    }
+    const a = tMax[0] < tMax[1] ? (tMax[0] < tMax[2] ? 0 : 2) : (tMax[1] < tMax[2] ? 1 : 2);
+    if (tMax[a] > SHADOW_LEN) return false;
+    tMax[a] += tDelta[a]; ix[a] += step[a];
+  }
 }
 
 export class World {
@@ -28,6 +48,8 @@ export class World {
     if (lx === CH - 1) this.dirty.add(mod(cx + 1, nc) * nc + cz);
     if (lz === 0) this.dirty.add(cx * nc + mod(cz - 1, nc));
     if (lz === CH - 1) this.dirty.add(cx * nc + mod(cz + 1, nc));
+    // 影は、東(+x)とすこし北(-z)にのびる
+    this.dirty.add(mod(cx + 1, nc) * nc + cz); this.dirty.add(cx * nc + mod(cz - 1, nc)); this.dirty.add(mod(cx + 1, nc) * nc + mod(cz - 1, nc));
   }
 
   // 体(横の半幅 HW、高さ h)が、ブロックやプレートに重なっているか。重なった箱 [x0,y0,z0,x1,y1,z1] を返す
@@ -119,12 +141,28 @@ const FACES = [
   { n: [0, 0, -1], v: [[-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5], [0.5, -0.5, -0.5]] },
 ];
 
+const SUB = 3;   // 1まいの面を 3×3 に分けて、影をなめらかに
 export function buildChunk(world, cx, cz) {
   const pos = [], col = [], idx = [];
-  const quad = (p, s) => {
-    const base = pos.length / 3;
-    for (const q of p) { pos.push(q[0], q[1], q[2]); col.push(s, s, s); }
-    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  // 四角形 p0..p3 を分けて、頂点ごとに 明るさ × 影 をつける。sn=太陽にむいた法線、s=向きの明るさ
+  const quad = (p, sn, s, shadowOn) => {
+    const base = pos.length / 3, n1 = SUB + 1;
+    const cxm = (p[0][0] + p[2][0]) / 2, cym = (p[0][1] + p[2][1]) / 2, czm = (p[0][2] + p[2][2]) / 2;
+    const facing = sn[0] * SUN[0] + sn[1] * SUN[1] + sn[2] * SUN[2] > 0.02;
+    for (let j = 0; j <= SUB; j++) for (let i = 0; i <= SUB; i++) {
+      const u = i / SUB, v = j / SUB;
+      const P = [0, 1, 2].map((k) => p[0][k] * (1 - u) * (1 - v) + p[1][k] * u * (1 - v) + p[2][k] * u * v + p[3][k] * (1 - u) * v);
+      let c = s;
+      if (shadowOn && facing) {
+        const q = [P[0] + (cxm - P[0]) * 0.04 + sn[0] * 0.045, P[1] + (cym - P[1]) * 0.04 + sn[1] * 0.045, P[2] + (czm - P[2]) * 0.04 + sn[2] * 0.045];
+        if (occluded(world, q[0], q[1], q[2])) c = s * SHADOW;
+      }
+      pos.push(P[0], P[1], P[2]); col.push(c, c, c);
+    }
+    for (let j = 0; j < SUB; j++) for (let i = 0; i < SUB; i++) {
+      const a = base + j * n1 + i, b = a + 1, c2 = a + n1 + 1, d = a + n1;
+      idx.push(a, b, c2, a, c2, d);
+    }
   };
   for (let x = cx * CH; x < cx * CH + CH; x++) for (let z = cz * CH; z < cz * CH + CH; z++) for (let y = YMIN; y < YMIN + YN; y++) {
     const v = world.get(x, y, z);
@@ -132,19 +170,21 @@ export function buildChunk(world, cx, cz) {
     if (v & BLOCK) {
       for (const f of FACES) {
         if (world.get(x + f.n[0], y + f.n[1], z + f.n[2]) & BLOCK) continue;
-        quad(f.v.map((q) => [x + q[0], y + q[1], z + q[2]]), shade(f.n));
+        quad(f.v.map((q) => [x + q[0], y + q[1], z + q[2]]), f.n, shade(f.n), true);
       }
     } else {
       for (let i = 0; i < 12; i++) {
         if (!(v & (1 << i))) continue;
-        // プレートは厚みのない1まいの面。両面とも同じ明るさ(明るいほうの向き)
+        // プレートは厚みのない1まいの面。太陽がわの向きで明るさと影を決める(裏も同じ)
         const pl = PLATES[i], h = pl.half;
         const kt = h[0] < 0.1 ? 0 : h[1] < 0.1 ? 1 : 2;
         const B = pl.axes[(kt + 1) % 3], C = pl.axes[(kt + 2) % 3], hb = h[(kt + 1) % 3], hc = h[(kt + 2) % 3];
         const k = pl.diag ? 1 : (0.5 - 0.004) / (0.5 - T / 2);
         const ctr = [x + pl.c[0] * k, y + pl.c[1] * k, z + pl.c[2] * k];
         const corner = (sb, sc) => [ctr[0] + B[0] * hb * sb + C[0] * hc * sc, ctr[1] + B[1] * hb * sb + C[1] * hc * sc, ctr[2] + B[2] * hb * sb + C[2] * hc * sc];
-        quad([corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], Math.max(shade(pl.n), shade([-pl.n[0], -pl.n[1], -pl.n[2]])));
+        const toSun = pl.n[0] * SUN[0] + pl.n[1] * SUN[1] + pl.n[2] * SUN[2] >= 0;
+        const sn = toSun ? pl.n : pl.n.map((q) => -q);
+        quad([corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], sn, Math.max(shade(pl.n), shade(pl.n.map((q) => -q))), true);
       }
     }
   }

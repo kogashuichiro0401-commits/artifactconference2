@@ -82,6 +82,7 @@ export class BuildTool {
     for (let i = 0; i < 12; i++) {
       if (this.plateMode === 1 && i >= 6) continue;
       if (this.plateMode === 2 && i < 6) continue;
+      if (i >= 6 && (cur & 0xfc0)) continue;     // 斜めのプレートは、1つの座標に1つまで
       const n = PLATES[i].n;
       let sc = Math.abs(n[0] * dir[0] + n[1] * dir[1] + n[2] * dir[2]);
       if (i < 6 && (i & 1)) continue;          // 面は、± を後で決める(+側だけで比べる)

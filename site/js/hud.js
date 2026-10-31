@@ -20,7 +20,7 @@ function heartSVG(color, highlight) {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 const HINT = "<b>WASD</b>=移動　<b>Space</b>=ジャンプ(2回=飛行、飛行中 Space↑ Shift↓)　<b>W/Sを2回</b>=ダッシュ　<b>Shift</b>=しゃがみ<br>" +
-  "落下中に<b>Space</b>=エリトラ(左クリック=ロケット花火)　<b>F5</b>=視点　<b>ホイール</b>=ズーム　<b>E</b>=持ち物　<b>Esc</b>=メニュー";
+  "落下中に<b>Space</b>=エリトラ(右クリック=ロケット花火)　<b>F5</b>=視点　<b>ホイール</b>=ズーム　<b>E</b>=持ち物　<b>Esc</b>=メニュー";
 
 const BOOK = `
   <h2>使い方の本</h2>
@@ -28,11 +28,11 @@ const BOOK = `
     <li><b>WASD</b>…あるく。<b>Space</b>…ジャンプ。すばやく2回押すと、空を飛べる(飛行中は Space で上、Shift で下)</li>
     <li><b>WかSを2回</b>…ダッシュ。<b>Shift</b>…しゃがむ</li>
     <li>落下している間に <b>Space</b>…エリトラが開いて、滑空できる。急降下で加速、上向きで減速。もう一度 Space で閉じる</li>
-    <li>滑空中の<b>左クリック</b>…ロケット花火で加速する</li>
+    <li>滑空中の<b>右クリック</b>…ロケット花火で加速する</li>
     <li><b>マウス</b>…見る方向。<b>ホイール</b>…ズーム。<b>F5</b>…視点の切り替え(一人称/後ろ/前)</li>
     <li><b>十字の先</b>のブロック/プレートは、黒い細い枠で囲まれる</li>
     <li>(管理者だけ)<b>F4</b>…建築破壊モード。<b>左クリック</b>=壊す、<b>右クリック</b>=置く(白いブロック/プレートを持っているとき)。プレートは、目線に垂直な向きのものが薄く表示されて置かれる。<b>C</b>…プレートの置き方(自動/面だけ/斜めだけ)</li>
-    <li><b>F3</b>…座標などの情報。世界は64×64×64で、はしは反対側につながっている(上下も)</li>
+    <li><b>F3</b>…座標などの情報。世界は48×48×48で、はしは反対側につながっている(上下も)</li>
     <li><b>1〜9</b>…手に持つものを変える。<b>E</b>…持ち物。<b>Esc</b>…メニュー</li>
   </ul>`;
 
@@ -111,11 +111,12 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
 
   // ----- ログイン -----
   const FILE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>`;
-  const brand = (sub, file) => `<div class="brand"><span>artifact学会<b>。</b></span><small>${esc(sub)}</small>${file ? `<button class="filebtn" id="btn-log" title="更新履歴" aria-label="更新履歴">${FILE_ICON}更新履歴</button>` : ""}</div>`;
+  const MOUSE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="6"/><path d="M12 2.5v7M6 9.5h12"/></svg>`;
+  const brand = (sub, file) => `<div class="brand"><span>artifact学会<b>。</b></span><small>${esc(sub)}</small>${file ? `<button class="filebtn" id="btn-ops" title="操作" aria-label="操作">${MOUSE_ICON}操作</button>` : ""}${file ? `<button class="filebtn" id="btn-log" title="更新履歴" aria-label="更新履歴">${FILE_ICON}更新履歴</button>` : ""}</div>`;
   const K = (...k) => k.map((x) => `<kbd>${x}</kbd>`).join(" ");
   const KEYS = [
     ["移動", ["歩く", K("W", "A", "S", "D")], ["ダッシュ", K("W") + " か " + K("S") + " を2回"], ["しゃがむ", K("Shift")]],
-    ["空中", ["ジャンプ", K("Space")], ["飛行(管理者のみ)", K("Space") + " を2回 → 上 " + K("Space") + " / 下 " + K("Shift")], ["エリトラ", "落下中に " + K("Space") + "(もう一度で閉じる)"], ["ロケット花火", "滑空中に左クリック"]],
+    ["空中", ["ジャンプ", K("Space")], ["飛行(管理者のみ)", K("Space") + " を2回 → 上 " + K("Space") + " / 下 " + K("Shift")], ["エリトラ", "落下中に " + K("Space") + "(もう一度で閉じる)"], ["ロケット花火", "滑空中に右クリック"]],
     ["画面", ["視点", K("F5")], ["ズーム", "ホイール"], ["座標など", K("F3")], ["16×16の区切り", K("F2")], ["メニュー", K("Esc")], ["スタート地点へ", K("R")]],
     ["持ち物", ["切り替え", K("1") + "〜" + K("9")], ["持ち物の画面", K("E")]],
     ["建築(管理者のみ)", ["建築破壊モード", K("F4")], ["壊す / 置く", "左クリック / 右クリック(長押しで、1ブロック動くたびに連続)"], ["プレートの置き方", K("C") + "(自動 → 面だけ → 斜めだけ)"]],
@@ -159,9 +160,9 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       <h2>設定</h2>
       <label>視野角 <input type="range" id="set-fov" min="50" max="110" step="1" value="${settings.fov}"><span id="set-fov-v">${settings.fov}</span></label>
       <label>マウス感度 <input type="range" id="set-sens" min="1" max="10" step="0.5" value="${settings.sens}"><span id="set-sens-v">${settings.sens}</span></label>
-      <h2>操作</h2>
-      ${keysTable}
+      <div id="opsbox" hidden><h2>操作</h2>${keysTable}</div>
       <div id="logbox" hidden><h2>更新履歴</h2><ul class="log">${log}</ul></div>`;
+    $("btn-ops").onclick = () => { const b = $("opsbox"); b.hidden = !b.hidden; if (!b.hidden) b.scrollIntoView({ block: "nearest" }); };
     $("btn-log").onclick = () => { const b = $("logbox"); b.hidden = !b.hidden; if (!b.hidden) b.scrollIntoView({ block: "nearest" }); };
     $("btn-enter").onclick = () => { entered = true; onEnter(); };
     $("btn-logout").onclick = () => onLogout();
@@ -189,8 +190,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     document.body.classList.toggle("login", name === "login");
   }
 
-  $("hint").innerHTML = HINT;
-  setTimeout(() => { $("hint").style.opacity = "0"; }, 12000);
+  $("hint").hidden = true;   // 操作の説明は、メニューのマウスアイコンから
   setHealth(20);
   select(0);
 

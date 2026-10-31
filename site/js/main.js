@@ -8,7 +8,7 @@ import { restore, login, logout, getToken } from "./auth.js";
 import { VERSION } from "./version.js";
 import { World, buildChunk, CH } from "./world.js";
 import { BuildTool } from "./build.js";
-import { N, YMIN, YN, BLOCK, mod, wrapDelta } from "./shared.js";
+import { N, YMIN, YN, BLOCK, mod, wrapDelta, SUN } from "./shared.js";
 import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
 
@@ -25,7 +25,7 @@ const settings = { fov: 70, sens: 5 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SKEY) || "{}")); } catch (e) { /* 読めなければ初期値 */ }
 
 // ----- 3D表示: 白い床・青い空・平ら -----
-const SKY = 0x5ab4ee;
+const SKY = 0xf0a070;   // 夕日: 地平線のオレンジ(遠くのかすみの色)
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.shadowMap.enabled = !window.__NOSHADOW;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -33,7 +33,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
 scene.fog = new THREE.Fog(SKY, 70, 190);
-// 世界(64x64x64)のはしを、青い枠で示す
+// 世界(48x48x48)のはしを、青い枠で示す
 {
   const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(N, YN, N));
   const fr = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1f6bff, fog: false }));
@@ -58,16 +58,41 @@ const chunkGrid = (() => {
 const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 400);
 camera.rotation.order = "YXZ";
 
-scene.add(new THREE.HemisphereLight(0xdfeeff, 0x9aa3ae, 0.62));
-const sun = new THREE.DirectionalLight(0xfff6e8, 0.95);
-sun.position.set(200, 330, 140);
+scene.add(new THREE.HemisphereLight(0xffe0c8, 0x9a8a80, 0.75));
+const sun = new THREE.DirectionalLight(0xffc890, 0.9);
+sun.position.set(SUN[0] * 300, SUN[1] * 300, SUN[2] * 300);
 sun.target.position.set(0, 10, 0);
 sun.castShadow = false;
-sun.shadow.mapSize.set(window.__LO ? 1024 : 2048, window.__LO ? 1024 : 2048);
-Object.assign(sun.shadow.camera, { left: -110, right: 110, top: 110, bottom: -110, near: 10, far: 900 });
-sun.shadow.bias = -0.0006;
-sun.shadow.normalBias = 0.05;
 scene.add(sun, sun.target);
+
+// 夕焼けの空と、西にしずむ太陽
+const skyDome = (() => {
+  const g = new THREE.SphereGeometry(300, 32, 20), P = g.attributes.position, cols = [];
+  const mix = (a, b, t) => a.map((q, i) => q + (b[i] - q) * t);
+  const stops = [[0, [1.0, 0.62, 0.36]], [0.16, [0.95, 0.45, 0.5]], [0.45, [0.5, 0.34, 0.62]], [1, [0.16, 0.2, 0.46]]];
+  for (let i = 0; i < P.count; i++) {
+    const e = Math.max(0, P.getY(i) / 300), d = [P.getX(i) / 300, P.getY(i) / 300, P.getZ(i) / 300];
+    let c = stops[0][1];
+    for (let k = 1; k < stops.length; k++) if (e <= stops[k][0]) { c = mix(stops[k - 1][1], stops[k][1], (e - stops[k - 1][0]) / (stops[k][0] - stops[k - 1][0])); break; } else c = stops[k][1];
+    const gl = Math.pow(Math.max(0, d[0] * SUN[0] + d[1] * SUN[1] + d[2] * SUN[2]), 6) * 0.55;   // 太陽のまわりの光
+    cols.push(Math.min(1, c[0] + gl), Math.min(1, c[1] + gl * 0.7), Math.min(1, c[2] + gl * 0.35));
+  }
+  g.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
+  const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  mesh.renderOrder = -10; mesh.frustumCulled = false;
+  scene.add(mesh);
+  return mesh;
+})();
+const sunSprite = (() => {
+  const cv = document.createElement("canvas"); cv.width = cv.height = 128;
+  const x = cv.getContext("2d"), gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, "rgba(255,255,240,1)"); gr.addColorStop(0.22, "rgba(255,236,170,1)"); gr.addColorStop(0.3, "rgba(255,190,100,.55)"); gr.addColorStop(1, "rgba(255,150,80,0)");
+  x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), fog: false, depthWrite: false, transparent: true }));
+  s.scale.set(120, 120, 1); s.renderOrder = -9;
+  scene.add(s);
+  return s;
+})();
 
 // ----- 世界: ブロックとプレート。横・縦ともにループするので、まわりに27個のコピーを並べて、切れ目なく見せる -----
 const world = new World();
@@ -111,6 +136,33 @@ const firstPerson = createFirstPerson(THREE, camera, scene, controls);
 const build = new BuildTool(THREE, scene, world);
 let isAdmin = false, buildMode = false;
 const me3d = createAvatar(THREE, "#c0392b");
+// 左上の「はたから見た自分」: 小さな別の場面に、もう一人の自分を置いて映す(画面の左上にだけ描く)
+const selfScene = new THREE.Scene();
+const selfAv = createAvatar(THREE, "#c0392b");
+selfScene.add(selfAv.root);
+selfScene.add(new THREE.HemisphereLight(0xffe0c8, 0x8a7a70, 0.8));
+{ const dl = new THREE.DirectionalLight(0xffc890, 0.9); dl.position.set(SUN[0] * 10, SUN[1] * 10, SUN[2] * 10); selfScene.add(dl); }
+{ const disc = new THREE.Mesh(new THREE.CircleGeometry(1.5, 32), new THREE.MeshBasicMaterial({ color: 0xf4f0ea })); disc.rotation.x = -Math.PI / 2; disc.position.y = -0.01; selfScene.add(disc); }
+const selfCam = new THREE.PerspectiveCamera(32, 118 / 150, 0.1, 50);
+selfCam.position.set(3.7, 2.7, 3.7);   // 南東から北西をながめる(ミニ地図と同じ向き)
+selfCam.lookAt(0, 0.85, 0);
+const selfEl = document.getElementById("selfview");
+function renderSelf(p, dt) {
+  const r = selfEl.getBoundingClientRect();
+  if (r.width < 2) return;
+  selfAv.pose({ hs: controls.hs || 0, bodyYaw: p.bodyYaw, yaw: p.yaw, pitch: p.pitch, glide: p.glide, fly: p.fly, sneak: p.sneak, sprint: p.sprint, air: !p.ground, rocket: p.boost > 0 }, dt);
+  const H = window.innerHeight;
+  renderer.setScissorTest(true);
+  renderer.setViewport(r.left, H - r.bottom, r.width, r.height);
+  renderer.setScissor(r.left, H - r.bottom, r.width, r.height);
+  renderer.autoClear = false;
+  renderer.setClearColor(0x3a4560, 1);
+  renderer.clear();
+  renderer.render(selfScene, selfCam);
+  renderer.autoClear = true;
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, window.innerWidth, H);
+}
 scene.add(me3d.root);
 function applySettings() {
   controls.sens = settings.sens / 5;
@@ -250,26 +302,27 @@ document.addEventListener("pointerlockerror", () => { if (!panel) hud.setResume(
 canvas.addEventListener("click", () => { if (!panel && !locked) requestLock(); });
 const wrapCell = (c) => [mod(c[0], N), YMIN + mod(c[1] - YMIN, YN), mod(c[2], N)];
 // 建築・破壊を1回する。送ったら true
+let lastAct = { key: "", at: 0 };
 function act(button) {
   if (!net.ready()) { hud.say("オフラインのときは、建築・破壊できません"); return false; }
+  let op, c, i;
   if (button === 0 && build.target) {   // 左クリック = 壊す
-    const t = build.target, c = wrapCell(t.cell);
-    net.sendEdit(t.kind === "block" ? "b-" : "p-", c[0], c[1], c[2], t.plate);
-    return true;
-  }
-  if (button === 2 && build.place) {   // 右クリック = 置く
-    const pl = build.place, c = wrapCell([pl.x, pl.y, pl.z]);
-    net.sendEdit(pl.kind === "block" ? "b+" : "p+", c[0], c[1], c[2], pl.i);
-    return true;
-  }
-  return false;
+    const t = build.target; op = t.kind === "block" ? "b-" : "p-"; c = wrapCell(t.cell); i = t.plate;
+  } else if (button === 2 && build.place) {   // 右クリック = 置く
+    const pl = build.place; op = pl.kind === "block" ? "b+" : "p+"; c = wrapCell([pl.x, pl.y, pl.z]); i = pl.i;
+  } else return false;
+  const key = op + c.join(",") + ":" + i, now = performance.now();
+  if (key === lastAct.key && now - lastAct.at < 250) return false;   // 同じ所へ、さっき送ったばかり
+  lastAct = { key, at: now };
+  net.sendEdit(op, c[0], c[1], c[2], i);
+  return true;
 }
-// 長押し: 1ブロック分うごくたびに、もう1回(一列にならべる・一列にこわすため。回数は移動の速さしだい)
+// 長押し: 自分の歩く(飛ぶ)速さに合わせて、くりかえす。止まっていても歩く速さでつづく
 let hold = null;
 window.addEventListener("mousedown", (e) => {
   if (!locked || panel || controls.p.glide) return;
   if (buildMode && isAdmin) {
-    if (e.button === 0 || e.button === 2) { const p = controls.p; act(e.button); hold = { button: e.button, x: p.x, y: p.y, z: p.z }; }
+    if (e.button === 0 || e.button === 2) { const p = controls.p; act(e.button); hold = { button: e.button, acc: 0 }; }
     return;
   }
   if ((e.button === 0 || e.button === 2) && hud.selectedItem() === "book") setPanel("book");
@@ -326,6 +379,8 @@ function frame(t) {
   last = t;
   controls.update(dt);
   controls.camera(camera, dt);
+  skyDome.position.copy(camera.position);
+  sunSprite.position.set(camera.position.x + SUN[0] * 270, camera.position.y + SUN[1] * 270, camera.position.z + SUN[2] * 270);
   const p = controls.p;
   me3d.root.visible = p.view !== 0;
   if (p.view !== 0) {
@@ -340,11 +395,14 @@ function frame(t) {
   if (panel) { build.outline.visible = build.ghost.visible = build.ghostLine.visible = false; build.target = build.place = null; }
   else build.update(eye, dirv, buildMode && isAdmin, hud.selectedItem(), [p.x - 0.3, p.y, p.z - 0.3, p.x + 0.3, p.y + controls.curH(), p.z + 0.3]);
   if (hold && buildMode && isAdmin && locked && !panel) {
-    const d = Math.hypot(wrapDelta(hold.x, p.x, N), wrapDelta(hold.y, p.y, YN), wrapDelta(hold.z, p.z, N));
-    if (d >= 1 && act(hold.button)) { hold.x = p.x; hold.y = p.y; hold.z = p.z; }
+    const sp = p.fly ? (p.sprint ? 21 : 10.9) : p.sprint ? 5.6 : 4.32;   // しゃがんでいても、歩く速さ以上でくりかえす
+    const iv = Math.max(0.05, 1 / (Math.max(sp, 4.32) * 1.25));
+    hold.acc += dt;
+    if (hold.acc >= iv) hold.acc = act(hold.button) ? 0 : iv;
   } else if (hold && (!locked || panel)) hold = null;
   const kmh = Math.hypot(p.vx, p.vy, p.vz) * 3;
   renderer.render(scene, camera);
+  if (!panel) renderSelf(p, dt);
   sendPose(t);
 
   fps = fps * 0.9 + (dt > 0 ? 1 / dt : 0) * 0.1;
