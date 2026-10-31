@@ -323,51 +323,14 @@ function act(button) {
   }
   return null;
 }
-const unitAxis = (d) => { let k = 0; for (let a = 1; a < 3; a++) if (Math.abs(d[a]) > Math.abs(d[k])) k = a; const v = [0, 0, 0]; v[k] = d[k] >= 0 ? 1 : -1; return v; };
-const overlapsBody = (c, p) => p.x + 0.3 > c[0] - 0.5 && p.x - 0.3 < c[0] + 0.5 && p.z + 0.3 > c[2] - 0.5 && p.z - 0.3 < c[2] + 0.5 && p.y + controls.curH() > c[1] - 0.5 && p.y < c[1] + 0.5;
-// 長押し: 最初の2回で「列の向き」が決まり、あとはその一列をまっすぐ、自分の速さにあわせてつづける
-let hold = null;
-function holdStep(p) {
-  const h = hold;
-  if (!h.first) { const r = act(h.button); if (r) { h.first = r; h.last = r.cell; } return !!r; }
-  if (!h.dir) {   // 列の向きを決める: ねらった先がとなりならそれ、なければ動いた向き、それも無ければ見ている向き
-    const cand = h.button === 2 ? (build.place ? [build.place.x, build.place.y, build.place.z] : null) : (build.target ? build.target.cell : null);
-    const df = cand ? [cand[0] - h.last[0], cand[1] - h.last[1], cand[2] - h.last[2]] : null;
-    if (df && Math.abs(df[0]) + Math.abs(df[1]) + Math.abs(df[2]) === 1) h.dir = df;
-    else {
-      const mv = [wrapDelta(h.p0[0], p.x, N), wrapDelta(h.p0[1], p.y, YN), wrapDelta(h.p0[2], p.z, N)];
-      h.dir = Math.hypot(...mv) > 0.4 ? unitAxis(mv) : unitAxis(controls.lookDir());
-    }
-  }
-  const next = [h.last[0] + h.dir[0], h.last[1] + h.dir[1], h.last[2] + h.dir[2]];
-  const eye = [p.x, p.y + controls.eyeH(), p.z];
-  if (Math.hypot(wrapDelta(eye[0], next[0], N), wrapDelta(eye[1], next[1], YN), wrapDelta(eye[2], next[2], N)) > 5.6) return false;   // 遠い: 近づくまで待つ
-  const v = world.get(next[0], next[1], next[2]);
-  if (h.first.op === "b+") {
-    if (v) { h.done = true; return false; }           // ぶつかったら、列はおしまい
-    if (overlapsBody(next, p)) return false;           // 体と重なる間は待つ
-  } else if (h.first.op === "p+") {
-    if ((v & BLOCK) || (v & (1 << h.first.i)) || (h.first.i >= 6 && (v & 0xfc0))) { h.done = true; return false; }
-  } else if (h.first.op === "b-") {
-    if (!(v & BLOCK)) { h.done = true; return false; }
-  } else if (!(v & (1 << h.first.i))) { h.done = true; return false; }
-  if (!sendEdit(h.first.op, next, h.first.i)) return false;
-  h.last = next;
-  return true;
-}
 window.addEventListener("mousedown", (e) => {
   if (!locked || panel || controls.p.glide) return;
   if (buildMode && isAdmin) {
-    if (e.button === 0 || e.button === 2) {
-      const p = controls.p, r = act(e.button);
-      hold = { button: e.button, acc: 0, first: r, last: r ? r.cell : null, dir: null, p0: [p.x, p.y, p.z], done: false };
-    }
+    if (e.button === 0 || e.button === 2) act(e.button);   // 1クリック=1回(長押しの連続はなし)
     return;
   }
   if ((e.button === 0 || e.button === 2) && hud.selectedItem() === "book") setPanel("book");
 });
-window.addEventListener("mouseup", (e) => { if (hold && hold.button === e.button) hold = null; });
-window.addEventListener("blur", () => { hold = null; });
 window.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("wheel", (e) => {
   if (!locked || panel) return;
@@ -390,7 +353,7 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "F4") {
     e.preventDefault();
     if (!isAdmin) { hud.say("権限がありません(建築・破壊は管理者だけです)"); return; }
-    buildMode = !buildMode; hud.setBuildMode(buildMode); hold = null;
+    buildMode = !buildMode; hud.setBuildMode(buildMode);
     hud.say(buildMode ? "建築破壊モード: 左クリック=壊す / 右クリック=置く" : "通常モード");
     return;
   }
@@ -412,7 +375,8 @@ restore().then((u) => {
 
 // ----- メインループ -----
 let last = performance.now(), dbgT = 0, uiT = 0, fps = 0;
-const drawMap = createMinimap(document.getElementById("minimap"));
+const map3d = createMinimap(THREE, document.getElementById("minimap"));
+const altEl = document.getElementById("alt");
 function frame(t) {
   const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
@@ -433,22 +397,16 @@ function frame(t) {
   const dirv = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
   if (panel) { build.outline.visible = build.ghost.visible = build.ghostLine.visible = false; build.target = build.place = null; }
   else build.update(eye, dirv, buildMode && isAdmin, hud.selectedItem(), [p.x - 0.3, p.y, p.z - 0.3, p.x + 0.3, p.y + controls.curH(), p.z + 0.3]);
-  if (hold && buildMode && isAdmin && locked && !panel) {
-    const sp = p.fly ? (p.sprint ? 21 : 10.9) : p.sprint ? 5.6 : 4.32;   // しゃがんでいても、歩く速さ以上でくりかえす
-    const iv = Math.max(0.05, 1 / (Math.max(sp, 4.32) * 3));
-    hold.acc += dt;
-    if (!hold.done && hold.acc >= iv) hold.acc = holdStep(p) ? 0 : iv;
-  } else if (hold && (!locked || panel)) hold = null;
   const kmh = Math.hypot(p.vx, p.vy, p.vz) * 3;
   renderer.render(scene, camera);
-  if (!panel) renderSelf(p, dt);
+  if (!panel) { renderSelf(p, dt); map3d.render(p, dirv, renderer); }
   sendPose(t);
 
   fps = fps * 0.9 + (dt > 0 ? 1 / dt : 0) * 0.1;
   uiT += dt;
   if (uiT > 0.1) {
     uiT = 0;
-    drawMap(p, t / 1000);
+    altEl.textContent = "高さ " + Math.floor(p.y + 0.5 + 1e-6);
   }
   dbgT += dt;
   if (dbgT > 0.25) {
@@ -473,5 +431,5 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, set hold(v) { hold = v; }, get hold() { return hold; }, act }, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
+window.__craft = { test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act }, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });

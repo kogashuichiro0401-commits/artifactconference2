@@ -1,43 +1,57 @@
-// 左上の現在地。Googleマップの「青い点」のように、真上から見た地図に、自分の位置と向き(扇)を出す。
-// 地図はいつも北が上。右上のコンパスは、ただの目印(固定)。
-import { N, YMIN } from "./shared.js";
+// 左上の現在地(3D)。世界の立方体を小さな別の場面に作り、自分の位置・向きを、青い点と扇(円すい)で示す。
+// 背景は塗らない(キャラの表示と同じく、うしろの景色が透ける)。地図の「右上」が北。
+import { N, YMIN, YN } from "./shared.js";
 
-export function createMinimap(canvas) {
-  const W = 136, H = 136, dpr = Math.min(2, window.devicePixelRatio || 1);
-  canvas.width = W * dpr; canvas.height = H * dpr;
-  canvas.style.width = W + "px"; canvas.style.height = H + "px";
-  const g = canvas.getContext("2d");
-  const M = 10, S = W - M * 2;   // 世界の四角の位置と大きさ
-  const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
-  return function draw(p, t) {
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, W, H);
-    rr(0, 0, W, H, 12); g.fillStyle = "rgba(232,236,240,.88)"; g.fill();
-    // 世界(ふちは反対がわにつながっている)
-    g.fillStyle = "#fff"; g.fillRect(M, M, S, S);
-    g.strokeStyle = "rgba(0,0,0,.09)"; g.lineWidth = 1;
-    g.beginPath();
-    for (let i = 1; i < N / 16; i++) { const k = M + (S * i * 16) / N; g.moveTo(k, M); g.lineTo(k, M + S); g.moveTo(M, k); g.lineTo(M + S, k); }
-    g.stroke();
-    g.strokeStyle = "rgba(60,100,200,.55)"; g.strokeRect(M + 0.5, M + 0.5, S - 1, S - 1);
-    // 現在地(青い点と、向きの扇)
-    const px = M + ((p.x + 0.5) / N) * S, pz = M + ((p.z + 0.5) / N) * S;
-    const a = Math.atan2(-Math.cos(p.yaw), -Math.sin(p.yaw));   // 画面での向き(x右、z下)
-    g.save(); g.beginPath(); g.rect(2, 2, W - 4, H - 4); g.clip();
-    const R = 30, gr = g.createRadialGradient(px, pz, 2, px, pz, R);
-    gr.addColorStop(0, "rgba(66,133,244,.65)"); gr.addColorStop(1, "rgba(66,133,244,0)");
-    g.beginPath(); g.moveTo(px, pz); g.arc(px, pz, R, a - 0.62, a + 0.62); g.closePath(); g.fillStyle = gr; g.fill();
-    g.beginPath(); g.arc(px, pz, 9 + 1.5 * Math.sin((t || 0) * 3), 0, 6.3); g.fillStyle = "rgba(66,133,244,.22)"; g.fill();
-    g.beginPath(); g.arc(px, pz, 5.6, 0, 6.3); g.fillStyle = "#fff"; g.shadowColor = "rgba(0,0,0,.35)"; g.shadowBlur = 3; g.fill(); g.shadowBlur = 0;
-    g.beginPath(); g.arc(px, pz, 4, 0, 6.3); g.fillStyle = "#4285f4"; g.fill();
-    g.restore();
-    // コンパス(固定のアイコン)
-    const cx = W - 17, cy = 17;
-    g.beginPath(); g.arc(cx, cy, 11, 0, 6.3); g.fillStyle = "#fff"; g.shadowColor = "rgba(0,0,0,.3)"; g.shadowBlur = 3; g.fill(); g.shadowBlur = 0;
-    g.beginPath(); g.moveTo(cx, cy - 8); g.lineTo(cx + 3.4, cy + 1); g.lineTo(cx - 3.4, cy + 1); g.closePath(); g.fillStyle = "#e5392b"; g.fill();
-    g.beginPath(); g.moveTo(cx, cy + 8); g.lineTo(cx + 3.4, cy + 1); g.lineTo(cx - 3.4, cy + 1); g.closePath(); g.fillStyle = "#9aa0a6"; g.fill();
-    g.fillStyle = "#555"; g.font = "bold 9px sans-serif"; g.textAlign = "center"; g.fillText("北", cx, cy + 20);
-    // 高さ
-    g.fillStyle = "#666"; g.font = "11px sans-serif"; g.textAlign = "left"; g.fillText("高さ " + Math.floor(p.y + 0.5 + 1e-6), 8, H - 3);
+export function createMinimap(T, el) {
+  const scene = new T.Scene();
+  const cx = N / 2 - 0.5, cy = YMIN + YN / 2 - 0.5, cz = N / 2 - 0.5, yb = YMIN - 0.5;
+  const line = (geo, color, opacity) => new T.LineSegments(geo, new T.LineBasicMaterial({ color, transparent: true, opacity, depthTest: false }));
+  // 立方体のふちと、床、16ブロックごとの区切り
+  const box = line(new T.EdgesGeometry(new T.BoxGeometry(N, YN, N)), 0xcfe1ff, 0.95);
+  box.position.set(cx, cy, cz); scene.add(box);
+  const floor = new T.Mesh(new T.PlaneGeometry(N, N), new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, side: T.DoubleSide, depthWrite: false }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(cx, yb, cz); scene.add(floor);
+  const gv = [];
+  for (let i = 1; i < N / 16; i++) { const k = -0.5 + i * 16; gv.push(k, yb, -0.5, k, yb, N - 0.5, -0.5, yb, k, N - 0.5, yb, k); }
+  const gg = new T.BufferGeometry(); gg.setAttribute("position", new T.Float32BufferAttribute(gv, 3));
+  scene.add(line(gg, 0xffffff, 0.5));
+  // 自分: 白ふちの青い点、床までの線、床のかげ、向きの円すい
+  const ring = new T.Mesh(new T.SphereGeometry(3.4, 16, 12), new T.MeshBasicMaterial({ color: 0xffffff, depthTest: false }));
+  const dot = new T.Mesh(new T.SphereGeometry(2.5, 16, 12), new T.MeshBasicMaterial({ color: 0x4285f4, depthTest: false }));
+  ring.renderOrder = 10; dot.renderOrder = 11;
+  const drop = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(), new T.Vector3(0, -1, 0)]), new T.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthTest: false }));
+  const shadow = new T.Mesh(new T.CircleGeometry(2.6, 20), new T.MeshBasicMaterial({ color: 0x4285f4, transparent: true, opacity: 0.55, depthTest: false }));
+  shadow.rotation.x = -Math.PI / 2;
+  const cg = new T.ConeGeometry(8, 22, 24, 1, true); cg.translate(0, -11, 0);   // 先が原点、ひろがる向きが -Y
+  const cone = new T.Mesh(cg, new T.MeshBasicMaterial({ color: 0x4285f4, transparent: true, opacity: 0.55, side: T.DoubleSide, depthWrite: false, depthTest: false }));
+  cone.renderOrder = 9;
+  scene.add(ring, dot, drop, shadow, cone);
+  // カメラ: 南東の上から北西をながめる(北が右上になる)
+  const cam = new T.PerspectiveCamera(30, 1, 10, 600);
+  const off = new T.Vector3(0.55, 0.78, 0.83).normalize().multiplyScalar(165);
+  cam.position.set(cx + off.x, cy + off.y - 8, cz + off.z); cam.lookAt(cx, cy - 4, cz);
+  const down = new T.Vector3(0, -1, 0), q = new T.Quaternion(), d = new T.Vector3();
+  return {
+    // p: 自分の状態、dir: 見ている向き(3成分)、renderer: 描画器
+    render(p, dir, renderer) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2) return;
+      ring.position.set(p.x, p.y + 0.9, p.z); dot.position.copy(ring.position); cone.position.copy(ring.position);
+      drop.position.copy(ring.position); drop.scale.set(1, ring.position.y - yb, 1);
+      shadow.position.set(p.x, yb + 0.05, p.z);
+      d.set(dir[0], dir[1], dir[2]).normalize();
+      cone.quaternion.copy(q.setFromUnitVectors(down, d));
+      const H = window.innerHeight;
+      cam.aspect = r.width / r.height; cam.updateProjectionMatrix();
+      renderer.setScissorTest(true);
+      renderer.setViewport(r.left, H - r.bottom, r.width, r.height);
+      renderer.setScissor(r.left, H - r.bottom, r.width, r.height);
+      renderer.autoClear = false;
+      renderer.clearDepth();   // 色は消さない
+      renderer.render(scene, cam);
+      renderer.autoClear = true;
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, window.innerWidth, H);
+    },
   };
 }
