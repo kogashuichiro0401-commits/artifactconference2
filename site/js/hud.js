@@ -110,7 +110,17 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
   $("btn-book-close").onclick = onClose;
 
   // ----- ログイン -----
-  const brand = (sub) => `<div class="brand"><span>artifact学会<b>。</b></span><small>${esc(sub)}</small></div>`;
+  const FILE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>`;
+  const brand = (sub, file) => `<div class="brand"><span>artifact学会<b>。</b></span><small>${esc(sub)}</small>${file ? `<button class="filebtn" id="btn-log" title="更新履歴" aria-label="更新履歴">${FILE_ICON}更新履歴</button>` : ""}</div>`;
+  const K = (...k) => k.map((x) => `<kbd>${x}</kbd>`).join(" ");
+  const KEYS = [
+    ["移動", ["歩く", K("W", "A", "S", "D")], ["ダッシュ", K("W") + " か " + K("S") + " を2回"], ["しゃがむ", K("Shift")]],
+    ["空中", ["ジャンプ", K("Space")], ["飛行(管理者のみ)", K("Space") + " を2回 → 上 " + K("Space") + " / 下 " + K("Shift")], ["エリトラ", "落下中に " + K("Space") + "(もう一度で閉じる)"], ["ロケット花火", "滑空中に左クリック"]],
+    ["画面", ["視点", K("F5")], ["ズーム", "ホイール"], ["座標など", K("F3")], ["16×16の区切り", K("F2")], ["メニュー", K("Esc")], ["スタート地点へ", K("R")]],
+    ["持ち物", ["切り替え", K("1") + "〜" + K("9")], ["持ち物の画面", K("E")]],
+    ["建築(管理者のみ)", ["建築破壊モード", K("F4")], ["壊す / 置く", "左クリック / 右クリック(長押しで、1ブロック動くたびに連続)"], ["プレートの置き方", K("C") + "(自動 → 面だけ → 斜めだけ)"]],
+  ];
+  const keysTable = `<table class="keys"><tr><th>やること</th><th>操作</th></tr>${KEYS.map(([sec, ...rows]) => `<tr class="sec"><td colspan="2">${sec}</td></tr>` + rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("")).join("")}</table>`;
   function renderLogin(msg) {
     $("panel-login").innerHTML = `
       ${brand("3D")}
@@ -141,7 +151,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     const nm = user ? user.displayName || user.username || "" : "";
     const av = user && user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(nm.slice(0, 1));
     $("panel-menu").innerHTML = `
-      ${brand("v" + VERSION)}
+      ${brand("v" + VERSION, true)}
       ${notice}
       <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}<span class="role">${user && user.role === "admin" ? "管理者" : "泳者"}</span></span><button class="pill" id="btn-logout">ログアウト</button></div>
       <button class="pill primary block" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
@@ -150,14 +160,9 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       <label>視野角 <input type="range" id="set-fov" min="50" max="110" step="1" value="${settings.fov}"><span id="set-fov-v">${settings.fov}</span></label>
       <label>マウス感度 <input type="range" id="set-sens" min="1" max="10" step="0.5" value="${settings.sens}"><span id="set-sens-v">${settings.sens}</span></label>
       <h2>操作</h2>
-      <ul>
-        <li>WASD=移動　Space=ジャンプ(2回=飛行、飛行中 Space↑ Shift↓)　W/Sを2回=ダッシュ　Shift=しゃがみ</li>
-        <li>落下中に Space=エリトラ(もう一度で終了)、滑空中の左クリック=ロケット花火</li>
-        <li>F5=視点　ホイール=ズーム　1〜9=持ち物　E=持ち物の画面　F3=座標表示　Esc=メニュー</li>
-        <li>管理者: F4=建築破壊モード(左=壊す・右=置く)　C=プレートの置き方</li>
-      </ul>
-      <h2>更新履歴</h2>
-      <ul class="log">${log}</ul>`;
+      ${keysTable}
+      <div id="logbox" hidden><h2>更新履歴</h2><ul class="log">${log}</ul></div>`;
+    $("btn-log").onclick = () => { const b = $("logbox"); b.hidden = !b.hidden; if (!b.hidden) b.scrollIntoView({ block: "nearest" }); };
     $("btn-enter").onclick = () => { entered = true; onEnter(); };
     $("btn-logout").onclick = () => onLogout();
     $("btn-respawn").onclick = () => { onRespawn(); onEnter(); };
@@ -200,12 +205,16 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     setAdmin: (a) => { setItems(a); renderHotbar(); select(sel); },
     setBuildMode: (on) => { $("mode").hidden = !on; $("mode").textContent = "建築破壊モード(F4で切り替え)"; },
     setUser: (u) => { user = u; entered = false; },
+    // 右上に流れるお知らせ(エリトラが開きました、など)
     say: (text) => {
-      const el = $("say");
-      el.textContent = text; el.classList.add("show");
-      clearTimeout(sayTimer);
-      sayTimer = setTimeout(() => el.classList.remove("show"), 2200);
+      const feed = $("feed"), el = document.createElement("div");
+      el.className = "fe"; el.textContent = text;
+      feed.appendChild(el);
+      while (feed.children.length > 4) feed.firstChild.remove();
+      setTimeout(() => el.classList.add("out"), 3000);
+      setTimeout(() => el.remove(), 3600);
     },
+    setPose: (text) => { $("pose").textContent = text; },
     setResume: (on) => { $("resume").hidden = !on; },
     // 右上の「オンライン」表示。lines の先頭が見出し、"*" で始まる行は自分
     setOnline: (lines) => {

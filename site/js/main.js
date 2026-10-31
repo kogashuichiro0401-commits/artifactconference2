@@ -8,7 +8,8 @@ import { restore, login, logout, getToken } from "./auth.js";
 import { VERSION } from "./version.js";
 import { World, buildChunk, CH } from "./world.js";
 import { BuildTool } from "./build.js";
-import { N, YMIN, YN, BLOCK, mod } from "./shared.js";
+import { N, YMIN, YN, BLOCK, mod, wrapDelta } from "./shared.js";
+import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
 
 const THREE = window.THREE;
@@ -39,6 +40,21 @@ scene.fog = new THREE.Fog(SKY, 70, 190);
   fr.position.set(N / 2 - 0.5, YMIN + YN / 2 - 0.5, N / 2 - 0.5);
   scene.add(fr);
 }
+// F2: 16ブロックごとの区切り(16×16×16の箱)
+const chunkGrid = (() => {
+  const v = [], x0 = -0.5, y0 = YMIN - 0.5, z0 = -0.5, S = 16, K = N / S;
+  for (let a = 0; a <= K; a++) for (let b = 0; b <= K; b++) {
+    v.push(x0, y0 + a * S, z0 + b * S, x0 + N, y0 + a * S, z0 + b * S);   // x方向
+    v.push(x0 + a * S, y0, z0 + b * S, x0 + a * S, y0 + YN, z0 + b * S);   // y方向
+    v.push(x0 + a * S, y0 + b * S, z0, x0 + a * S, y0 + b * S, z0 + N);   // z方向
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
+  const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xffa51f, transparent: true, opacity: 0.85 }));
+  l.visible = false;
+  scene.add(l);
+  return l;
+})();
 const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 400);
 camera.rotation.order = "YXZ";
 
@@ -233,21 +249,33 @@ document.addEventListener("pointerlockerror", () => { if (!panel) hud.setResume(
 
 canvas.addEventListener("click", () => { if (!panel && !locked) requestLock(); });
 const wrapCell = (c) => [mod(c[0], N), YMIN + mod(c[1] - YMIN, YN), mod(c[2], N)];
+// 建築・破壊を1回する。送ったら true
+function act(button) {
+  if (!net.ready()) { hud.say("オフラインのときは、建築・破壊できません"); return false; }
+  if (button === 0 && build.target) {   // 左クリック = 壊す
+    const t = build.target, c = wrapCell(t.cell);
+    net.sendEdit(t.kind === "block" ? "b-" : "p-", c[0], c[1], c[2], t.plate);
+    return true;
+  }
+  if (button === 2 && build.place) {   // 右クリック = 置く
+    const pl = build.place, c = wrapCell([pl.x, pl.y, pl.z]);
+    net.sendEdit(pl.kind === "block" ? "b+" : "p+", c[0], c[1], c[2], pl.i);
+    return true;
+  }
+  return false;
+}
+// 長押し: 1ブロック分うごくたびに、もう1回(一列にならべる・一列にこわすため。回数は移動の速さしだい)
+let hold = null;
 window.addEventListener("mousedown", (e) => {
   if (!locked || panel || controls.p.glide) return;
   if (buildMode && isAdmin) {
-    if (!net.ready()) { hud.say("オフラインのときは、建築・破壊できません"); return; }
-    if (e.button === 0 && build.target) {   // 左クリック = 壊す
-      const t = build.target, c = wrapCell(t.cell);
-      net.sendEdit(t.kind === "block" ? "b-" : "p-", c[0], c[1], c[2], t.plate);
-    } else if (e.button === 2 && build.place) {   // 右クリック = 置く
-      const pl = build.place, c = wrapCell([pl.x, pl.y, pl.z]);
-      net.sendEdit(pl.kind === "block" ? "b+" : "p+", c[0], c[1], c[2], pl.i);
-    }
+    if (e.button === 0 || e.button === 2) { const p = controls.p; act(e.button); hold = { button: e.button, x: p.x, y: p.y, z: p.z }; }
     return;
   }
   if ((e.button === 0 || e.button === 2) && hud.selectedItem() === "book") setPanel("book");
 });
+window.addEventListener("mouseup", (e) => { if (hold && hold.button === e.button) hold = null; });
+window.addEventListener("blur", () => { hold = null; });
 window.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("wheel", (e) => {
   if (!locked || panel) return;
@@ -270,12 +298,13 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "F4") {
     e.preventDefault();
     if (!isAdmin) { hud.say("権限がありません(建築・破壊は管理者だけです)"); return; }
-    buildMode = !buildMode; hud.setBuildMode(buildMode);
+    buildMode = !buildMode; hud.setBuildMode(buildMode); hold = null;
     hud.say(buildMode ? "建築破壊モード: 左クリック=壊す / 右クリック=置く" : "通常モード");
     return;
   }
   if (e.code === "KeyC" && !panel && locked && buildMode) { hud.say("プレートの置き方: " + build.cycleMode()); return; }
   if (e.code === "KeyR" && !panel && locked) { controls.respawn(); hud.say("スタート地点にもどりました"); return; }
+  if (e.code === "F2") { e.preventDefault(); chunkGrid.visible = !chunkGrid.visible; hud.say(chunkGrid.visible ? "16×16の区切りを表示(F2で消す)" : "区切りを消しました"); return; }
   if (e.code === "F3") { e.preventDefault(); hud.toggleDebug(); return; }
   if (panel && panel !== "inventory") return;
   const m = /^Digit([1-9])$/.exec(e.code);
@@ -290,7 +319,8 @@ restore().then((u) => {
 });
 
 // ----- メインループ -----
-let last = performance.now(), dbgT = 0, fps = 0;
+let last = performance.now(), dbgT = 0, uiT = 0, fps = 0;
+const drawMap = createMinimap(document.getElementById("minimap"));
 function frame(t) {
   const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
@@ -309,11 +339,25 @@ function frame(t) {
   const dirv = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
   if (panel) { build.outline.visible = build.ghost.visible = build.ghostLine.visible = false; build.target = build.place = null; }
   else build.update(eye, dirv, buildMode && isAdmin, hud.selectedItem(), [p.x - 0.3, p.y, p.z - 0.3, p.x + 0.3, p.y + controls.curH(), p.z + 0.3]);
+  if (hold && buildMode && isAdmin && locked && !panel) {
+    const d = Math.hypot(wrapDelta(hold.x, p.x, N), wrapDelta(hold.y, p.y, YN), wrapDelta(hold.z, p.z, N));
+    if (d >= 1 && act(hold.button)) { hold.x = p.x; hold.y = p.y; hold.z = p.z; }
+  } else if (hold && (!locked || panel)) hold = null;
   const kmh = Math.hypot(p.vx, p.vy, p.vz) * 3;
   renderer.render(scene, camera);
   sendPose(t);
 
   fps = fps * 0.9 + (dt > 0 ? 1 / dt : 0) * 0.1;
+  uiT += dt;
+  if (uiT > 0.1) {
+    uiT = 0;
+    const yd = ((((-p.yaw * 180) / Math.PI) % 360) + 360) % 360;
+    const dir8 = ["北", "北東", "東", "南東", "南", "南西", "西", "北西"][Math.round(yd / 45) % 8];
+    const hsp = Math.hypot(p.vx, p.vz);
+    const st = p.glide ? "滑空(エリトラ)" : p.fly ? (p.sprint ? "飛行(高速)" : "飛行") : p.sneak ? "しゃがみ" : !p.ground ? (p.vy > 0.5 ? "ジャンプ(上昇)" : "落下中") : p.sprint && hsp > 1 ? "ダッシュ" : hsp > 0.5 ? "歩き" : "立っている";
+    hud.setPose(`姿勢: ${st}\n向き: ${dir8} ${yd.toFixed(0)}°`);
+    drawMap(p);
+  }
   dbgT += dt;
   if (dbgT > 0.25) {
     dbgT = 0;
