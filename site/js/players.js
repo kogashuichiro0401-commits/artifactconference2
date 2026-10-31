@@ -42,8 +42,8 @@ export function createAvatar(T, shirt) {
   // s = { hs: 水平の速さ, bodyYaw, yaw, pitch, glide, fly, sneak, air }
   function pose(s, dt) {
     st.t += dt;
-    st.phase += s.hs * dt * 1.9;
-    const want = !s.air || s.fly ? Math.min(1, s.hs / 4.3) * (s.sprint ? 1.2 : 0.9) : 0.35;
+    st.phase += (s.fly ? 0.9 : s.hs * 1.9) * dt;   // 飛行中は、手足をゆっくり小さく
+    const want = s.fly ? 0.1 : !s.air ? Math.min(1, s.hs / 4.3) * (s.sprint ? 1.2 : 0.9) : 0.35;
     st.amp += ((s.air && !s.fly ? 0.35 : want) - st.amp) * (1 - Math.exp(-14 * dt));
     let sw = Math.sin(st.phase) * st.amp;
     const idle = Math.sin(st.t * 1.6) * 0.04;

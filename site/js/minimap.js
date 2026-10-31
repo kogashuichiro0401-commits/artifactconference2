@@ -22,25 +22,40 @@ export function createMinimap(T, el) {
   const drop = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(), new T.Vector3(0, -1, 0)]), new T.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthTest: false }));
   const shadow = new T.Mesh(new T.CircleGeometry(2.6, 20), new T.MeshBasicMaterial({ color: 0x4285f4, transparent: true, opacity: 0.55, depthTest: false }));
   shadow.rotation.x = -Math.PI / 2;
-  const cg = new T.ConeGeometry(8, 22, 24, 1, true); cg.translate(0, -11, 0);   // 先が原点、ひろがる向きが -Y
-  const cone = new T.Mesh(cg, new T.MeshBasicMaterial({ color: 0x4285f4, transparent: true, opacity: 0.55, side: T.DoubleSide, depthWrite: false, depthTest: false }));
-  cone.renderOrder = 9;
-  scene.add(ring, dot, drop, shadow, cone);
+  // 向き: 画面(PCのモニター)に映っている範囲を、四角すいで示す。先が自分の目、ひろがる先が見えている範囲
+  const L = 15, view = new T.Group(), pyr = new T.BufferGeometry();
+  const fm = new T.MeshBasicMaterial({ color: 0x4285f4, transparent: true, opacity: 0.32, side: T.DoubleSide, depthWrite: false, depthTest: false });
+  const fl = new T.LineBasicMaterial({ color: 0xbcd4ff, transparent: true, opacity: 0.95, depthTest: false });
+  const fmesh = new T.Mesh(pyr, fm), fedge = new T.LineSegments(new T.BufferGeometry(), fl);
+  fmesh.renderOrder = 9; fedge.renderOrder = 9;
+  view.add(fmesh, fedge);
+  let lastShape = "";
+  const cone = view;
+  scene.add(ring, dot, drop, shadow, view);
   // カメラ: 南東の上から北西をながめる(北が右上になる)
   const cam = new T.PerspectiveCamera(30, 1, 10, 600);
   const off = new T.Vector3(0.55, 0.78, 0.83).normalize().multiplyScalar(165);
   cam.position.set(cx + off.x, cy + off.y - 8, cz + off.z); cam.lookAt(cx, cy - 4, cz);
-  const down = new T.Vector3(0, -1, 0), q = new T.Quaternion(), d = new T.Vector3();
+  const eu = new T.Euler(0, 0, 0, "YXZ");
   return {
     // p: 自分の状態、dir: 見ている向き(3成分)、renderer: 描画器
-    render(p, dir, renderer) {
+    render(p, fov, renderer) {
       const r = el.getBoundingClientRect();
       if (r.width < 2) return;
-      ring.position.set(p.x, p.y + 0.9, p.z); dot.position.copy(ring.position); cone.position.copy(ring.position);
+      ring.position.set(p.x, p.y + 1.6, p.z); dot.position.copy(ring.position); view.position.copy(ring.position);
       drop.position.copy(ring.position); drop.scale.set(1, ring.position.y - yb, 1);
       shadow.position.set(p.x, yb + 0.05, p.z);
-      d.set(dir[0], dir[1], dir[2]).normalize();
-      cone.quaternion.copy(q.setFromUnitVectors(down, d));
+      const asp = window.innerWidth / window.innerHeight, hh = L * Math.tan((fov * Math.PI) / 360), ww = hh * asp, key = hh.toFixed(2) + "," + ww.toFixed(2);
+      if (key !== lastShape) {   // 画角(視野角・画面の縦横比)がかわったら、形を作りなおす
+        lastShape = key;
+        const c = [[-ww, -hh, -L], [ww, -hh, -L], [ww, hh, -L], [-ww, hh, -L]], o = [0, 0, 0], v = [];
+        for (let i = 0; i < 4; i++) v.push(...o, ...c[i], ...c[(i + 1) % 4]);
+        pyr.setAttribute("position", new T.Float32BufferAttribute(v, 3));
+        const e = [];
+        for (let i = 0; i < 4; i++) e.push(...o, ...c[i], ...c[i], ...c[(i + 1) % 4]);
+        fedge.geometry.setAttribute("position", new T.Float32BufferAttribute(e, 3));
+      }
+      eu.set(p.pitch, p.yaw, 0); view.quaternion.setFromEuler(eu);
       const H = window.innerHeight;
       cam.aspect = r.width / r.height; cam.updateProjectionMatrix();
       renderer.setScissorTest(true);

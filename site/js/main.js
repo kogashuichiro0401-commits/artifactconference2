@@ -376,7 +376,6 @@ restore().then((u) => {
 // ----- メインループ -----
 let last = performance.now(), dbgT = 0, uiT = 0, fps = 0;
 const map3d = createMinimap(THREE, document.getElementById("minimap"));
-const altEl = document.getElementById("alt");
 function frame(t) {
   const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
@@ -399,14 +398,13 @@ function frame(t) {
   else build.update(eye, dirv, buildMode && isAdmin, hud.selectedItem(), [p.x - 0.3, p.y, p.z - 0.3, p.x + 0.3, p.y + controls.curH(), p.z + 0.3]);
   const kmh = Math.hypot(p.vx, p.vy, p.vz) * 3;
   renderer.render(scene, camera);
-  if (!panel) { renderSelf(p, dt); map3d.render(p, dirv, renderer); }
+  if (!panel) { renderSelf(p, dt); map3d.render(p, camera.fov, renderer); }
   sendPose(t);
 
   fps = fps * 0.9 + (dt > 0 ? 1 / dt : 0) * 0.1;
   uiT += dt;
   if (uiT > 0.1) {
     uiT = 0;
-    altEl.textContent = "高さ " + Math.floor(p.y + 0.5 + 1e-6);
   }
   dbgT += dt;
   if (dbgT > 0.25) {
