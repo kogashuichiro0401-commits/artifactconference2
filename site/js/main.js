@@ -12,8 +12,10 @@ import { BuildTool } from "./build.js";
 import { N, YMIN, YN, BLOCK, mod, wrapDelta, SUN } from "./shared.js";
 import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
+import { createTouch, detectTouch } from "./touch.js";
 
 const THREE = window.THREE;
+const isTouch = detectTouch();   // スマホ・タブレット(?touch=1 でパソコンでも試せる)
 const canvas = document.getElementById("view");
 if (!THREE) {
   document.getElementById("fatal").hidden = false;
@@ -153,6 +155,7 @@ const selfEl = document.getElementById("selfview");
 function renderSelf(p, dt) {
   const r = selfEl.getBoundingClientRect();
   if (r.width < 2) return;
+  selfCam.aspect = r.width / r.height; selfCam.updateProjectionMatrix();
   selfAv.pose({ hs: controls.hs || 0, bodyYaw: p.bodyYaw, yaw: p.yaw, pitch: p.pitch, glide: p.glide, fly: p.fly, sneak: p.sneak, sprint: p.sprint, air: !p.ground, rocket: p.boost > 0 }, dt);
   const H = window.innerHeight;
   renderer.setScissorTest(true);
@@ -181,9 +184,10 @@ let netStarted = false;
 hud = createHud({
   settings,
   onSettings: () => { applySettings(); try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (e) { /* 保存できなくても動く */ } },
-  onEnter: () => { if (user) setPanel(null); },
+  onEnter: () => { if (user) { if (isTouch) tryFullscreen(); setPanel(null); } },
   onClose: () => setPanel(null),
   onRespawn: () => controls.respawn(),
+  onTouchEdit: () => { setPanel(null); if (touch) touch.startEdit(); },
   onLogin: async (u, p) => {
     const r = await login(u, p);
     if (r.error) return r;
@@ -193,7 +197,7 @@ hud = createHud({
   onLogout: async () => {
     await logout();
     net.stop(); netStarted = false; remotes.clear();
-    user = null; isAdmin = false; controls.canFly = false; buildMode = false; hud.setAdmin(false); hud.setBuildMode(false);
+    user = null; isAdmin = false; controls.canFly = false; if (touch) { touch.setAdmin(false); touch.setBuild(false); } buildMode = false; hud.setAdmin(false); hud.setBuildMode(false);
     netState = "idle"; refreshOnline();
     setPanel("login");
   },
@@ -201,7 +205,7 @@ hud = createHud({
 
 function signedIn(u) {
   user = u;
-  isAdmin = u.role === "admin"; buildMode = false; controls.canFly = isAdmin;
+  isAdmin = u.role === "admin"; buildMode = false; controls.canFly = isAdmin; if (touch) { touch.setAdmin(isAdmin); touch.setBuild(false); }
   hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(false);
   setPanel("menu");
 }
@@ -236,7 +240,7 @@ const net = new Net({
     everConnected = true;
     netState = "open";
     myName = m.name || "";
-    isAdmin = !!m.admin; controls.canFly = isAdmin;
+    isAdmin = !!m.admin; controls.canFly = isAdmin; if (touch) touch.setAdmin(isAdmin);
     if (!isAdmin) { buildMode = false; hud.setBuildMode(false); }
     hud.setAdmin(isAdmin);
     for (const e of m.edits || []) world.set(e[0], e[1], e[2], e[3]);   // みんなが作った建築を反映
@@ -281,9 +285,13 @@ function sendPose(t) {
 }
 
 function requestLock() {
+  if (isTouch) { locked = true; controls.locked = true; hud.setResume(false); return; }
   try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* 失敗したらクリックで再開 */ }
 }
-function exitLock() { if (document.pointerLockElement === canvas) document.exitPointerLock(); }
+function exitLock() {
+  if (isTouch) { if (locked) { locked = false; controls.locked = false; controls.release(); if (touch) touch.releaseAll(); } return; }
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+}
 function setPanel(name) {
   if (!user && name !== "login") name = "login";   // ログインしていない人は、世界に入れない
   panel = name;
@@ -341,11 +349,12 @@ function releaseBow() {
   arrows.shoot(pos, vel);
   if (net.ready()) net.sendShoot(pos, vel);
 }
-window.addEventListener("mouseup", (e) => { if (e.button === 2) releaseBow(); });
+window.addEventListener("mouseup", (e) => { if (!isTouch && e.button === 2) releaseBow(); });
 window.addEventListener("blur", cancelCharge);
+function startCharge() { charge = { t0: performance.now() }; chargeEl.hidden = false; }
 window.addEventListener("mousedown", (e) => {
-  if (!locked || panel || controls.p.glide) return;
-  if (e.button === 2 && hud.selectedItem() === "bow") { charge = { t0: performance.now() }; chargeEl.hidden = false; return; }
+  if (isTouch || !locked || panel || controls.p.glide) return;
+  if (e.button === 2 && hud.selectedItem() === "bow") { startCharge(); return; }
   if (buildMode && isAdmin) {
     if (e.button === 0 || e.button === 2) act(e.button);   // 1クリック=1回(長押しの連続はなし)
     return;
@@ -374,7 +383,7 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "F4") {
     e.preventDefault();
     if (!isAdmin) { hud.say("権限がありません(建築・破壊は管理者だけです)"); return; }
-    buildMode = !buildMode; hud.setBuildMode(buildMode);
+    buildMode = !buildMode; hud.setBuildMode(buildMode); if (touch) touch.setBuild(buildMode);
     hud.say(buildMode ? "建築破壊モード: 左クリック=壊す / 右クリック=置く" : "通常モード");
     return;
   }
@@ -386,6 +395,43 @@ window.addEventListener("keydown", (e) => {
   const m = /^Digit([1-9])$/.exec(e.code);
   if (m) hud.select(+m[1] - 1);
 });
+
+// ----- スマホの操作 -----
+let touch = null;
+function toggleBuild() {
+  if (!isAdmin) { hud.say("権限がありません(建築・破壊は管理者だけです)"); return; }
+  buildMode = !buildMode; hud.setBuildMode(buildMode); if (touch) touch.setBuild(buildMode);
+  hud.say(buildMode ? "建築破壊モード: タップ=置く / 長タップ=壊す" : "通常モード");
+}
+function tryFullscreen() {
+  try {
+    const el = document.documentElement, f = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (f && !document.fullscreenElement) { const r = f.call(el); if (r && r.catch) r.catch(() => {}); }
+    if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {});
+  } catch (e) { /* 使えない端末ではそのまま */ }
+}
+if (isTouch) {
+  touch = createTouch({
+    controls,
+    say: (t) => hud.say(t),
+    blocked: () => !!panel || !locked,
+    isBow: () => hud.selectedItem() === "bow",
+    bowDown: () => startCharge(),
+    bowUp: (cancel) => { if (cancel) cancelCharge(); else releaseBow(); },
+    tap: () => {
+      if (controls.p.glide) { controls.fireRocket(); return; }
+      if (buildMode && isAdmin) { act(2); return; }
+      if (hud.selectedItem() === "book") setPanel("book");
+    },
+    longPress: () => { if (buildMode && isAdmin) act(0); },
+    menu: () => { if (panel === "menu") setPanel(null); else if (!panel) setPanel("menu"); },
+    build: toggleBuild,
+    plate: () => hud.say("プレートの置き方: " + build.cycleMode()),
+    editStart: () => { setPanel(null); },
+    editEnd: () => { hud.say("ボタン配置を保存しました"); },
+  });
+  touch.setAdmin(isAdmin);
+}
 
 // ----- はじめ: 保存してあるログインを確かめる -----
 setPanel("login");

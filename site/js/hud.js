@@ -36,7 +36,7 @@ const BOOK = `
     <li><b>1〜9</b>…手に持つものを変える。<b>E</b>…持ち物。<b>Esc</b>…メニュー</li>
   </ul>`;
 
-export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onLogout, onRespawn }) {
+export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onLogout, onRespawn, onTouchEdit }) {
   const $ = (id) => document.getElementById(id);
   const inv = new Array(36).fill(null);   // 0〜8がホットバー
   inv[0] = "bow";
@@ -68,6 +68,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
   for (let i = 0; i < 9; i++) {
     const d = document.createElement("div");
     d.className = "slot";
+    d.addEventListener("pointerdown", (e) => { if (document.body.classList.contains("touch")) { e.preventDefault(); e.stopPropagation(); select(i); } });
     $("hotbar").appendChild(d);
     slotEls.push(d);
   }
@@ -157,6 +158,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}<span class="role">${user && user.role === "admin" ? "管理者" : "泳者"}</span></span><button class="pill" id="btn-logout">ログアウト</button></div>
       <button class="pill primary block" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
       <button class="pill block" id="btn-respawn">スタート地点にもどる (R)</button>
+      ${document.body.classList.contains("touch") ? '<button class="pill block line" id="btn-touchedit">ボタンの位置・大きさを調整</button>' : ""}
       <h2>設定</h2>
       <label>視野角 <input type="range" id="set-fov" min="50" max="110" step="1" value="${settings.fov}"><span id="set-fov-v">${settings.fov}</span></label>
       <label>マウス感度 <input type="range" id="set-sens" min="1" max="10" step="0.5" value="${settings.sens}"><span id="set-sens-v">${settings.sens}</span></label>
@@ -167,6 +169,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     $("btn-enter").onclick = () => { entered = true; onEnter(); };
     $("btn-logout").onclick = () => onLogout();
     $("btn-respawn").onclick = () => { onRespawn(); onEnter(); };
+    if ($("btn-touchedit")) $("btn-touchedit").onclick = () => onTouchEdit();
     const bind = (id, key) => {
       $(id).oninput = (e) => {
         settings[key] = +e.target.value;
