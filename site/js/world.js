@@ -9,25 +9,31 @@ export function shade(n) {
   const d = (n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]) / SUN[1];
   return 0.84 + 0.16 * (Math.max(-1, Math.min(1, d)) * 0.5 + 0.5);
 }
-const SHADOW = 0.78;      // 影になった所の明るさ(かけ算)
-const SHADOW_LEN = 18;    // 影をさがす距離(太陽に向かって)
+const SHADOW = 0.72;      // 影になった所の明るさ(かけ算)
+const SHADOW_LEN = 16;    // 影をさがす距離(太陽に向かって)
 
-// 点 o から太陽にむかう光が、ブロックやプレートにさえぎられるか
+// 点 o から太陽にむかう光が、ブロックやプレートにさえぎられるか(高速版: 配列を作らない)
+const SX = SUN[0], SY = SUN[1], SZ = SUN[2];
+const STX = SX > 0 ? 1 : -1, STY = SY > 0 ? 1 : -1, STZ = SZ > 0 ? 1 : -1;
+const DX = Math.abs(1 / SX), DY = Math.abs(1 / SY), DZ = Math.abs(1 / SZ);
+const _o = [0, 0, 0], _c = [0, 0, 0];
 function occluded(world, ox, oy, oz) {
-  const o = [ox, oy, oz], d = SUN;
-  const ix = [Math.floor(ox + 0.5), Math.floor(oy + 0.5), Math.floor(oz + 0.5)];
-  const step = [d[0] > 0 ? 1 : -1, d[1] > 0 ? 1 : -1, d[2] > 0 ? 1 : -1];
-  const tDelta = d.map((q) => (Math.abs(q) < 1e-9 ? Infinity : Math.abs(1 / q)));
-  const tMax = d.map((q, k) => (Math.abs(q) < 1e-9 ? Infinity : ((step[k] > 0 ? ix[k] + 0.5 : ix[k] - 0.5) - o[k]) / q));
-  for (let first = true; ; first = false) {
-    const v = world.get(ix[0], ix[1], ix[2]);
+  let ix = Math.floor(ox + 0.5), iy = Math.floor(oy + 0.5), iz = Math.floor(oz + 0.5);
+  let tx = ((STX > 0 ? ix + 0.5 : ix - 0.5) - ox) / SX, ty = ((STY > 0 ? iy + 0.5 : iy - 0.5) - oy) / SY, tz = ((STZ > 0 ? iz + 0.5 : iz - 0.5) - oz) / SZ;
+  const cells = world.cells;
+  for (let first = true, n = 0; ; first = false) {
+    if (++n > 80) { if (n === 81) console.warn("occluded loop", ox, oy, oz, tx, ty, tz); return false; }
+    const v = cells[((((iy - YMIN) % YN) + YN) % YN * N + (((iz % N) + N) % N)) * N + (((ix % N) + N) % N)];
     if (v) {
       if (v & BLOCK) { if (!first) return true; }
-      else for (let i = 0; i < 12; i++) if ((v & (1 << i)) && rayPlate(o, d, ix, PLATES[i])) return true;
+      else {
+        _o[0] = ox; _o[1] = oy; _o[2] = oz; _c[0] = ix; _c[1] = iy; _c[2] = iz;
+        for (let i = 0; i < 12; i++) if ((v & (1 << i)) && rayPlate(_o, SUN, _c, PLATES[i])) return true;
+      }
     }
-    const a = tMax[0] < tMax[1] ? (tMax[0] < tMax[2] ? 0 : 2) : (tMax[1] < tMax[2] ? 1 : 2);
-    if (tMax[a] > SHADOW_LEN) return false;
-    tMax[a] += tDelta[a]; ix[a] += step[a];
+    if (tx < ty) { if (tx < tz) { if (tx > SHADOW_LEN) return false; tx += DX; ix += STX; } else { if (tz > SHADOW_LEN) return false; tz += DZ; iz += STZ; } }
+    else if (ty < tz) { if (ty > SHADOW_LEN) return false; ty += DY; iy += STY; }
+    else { if (tz > SHADOW_LEN) return false; tz += DZ; iz += STZ; }
   }
 }
 
@@ -141,28 +147,41 @@ const FACES = [
   { n: [0, 0, -1], v: [[-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5], [0.5, -0.5, -0.5]] },
 ];
 
-const SUB = 3;   // 1まいの面を 3×3 に分けて、影をなめらかに
+const SUB = 4;   // 1まいの面を 4×4 に分けて、小さなマスごとに影を決める
 export function buildChunk(world, cx, cz) {
   const pos = [], col = [], idx = [];
-  // 四角形 p0..p3 を分けて、頂点ごとに 明るさ × 影 をつける。sn=太陽にむいた法線、s=向きの明るさ
-  const quad = (p, sn, s, shadowOn) => {
-    const base = pos.length / 3, n1 = SUB + 1;
-    const cxm = (p[0][0] + p[2][0]) / 2, cym = (p[0][1] + p[2][1]) / 2, czm = (p[0][2] + p[2][2]) / 2;
+  // 四角形 p0..p3(つながった順)を分けて、マスごとに 明るさ × 影 をつける。sn=太陽にむいた法線、s=向きの明るさ
+  const quad = (p, sn, s) => {
     const facing = sn[0] * SUN[0] + sn[1] * SUN[1] + sn[2] * SUN[2] > 0.02;
-    for (let j = 0; j <= SUB; j++) for (let i = 0; i <= SUB; i++) {
-      const u = i / SUB, v = j / SUB;
-      const P = [0, 1, 2].map((k) => p[0][k] * (1 - u) * (1 - v) + p[1][k] * u * (1 - v) + p[2][k] * u * v + p[3][k] * (1 - u) * v);
-      let c = s;
-      if (shadowOn && facing) {
-        const q = [P[0] + (cxm - P[0]) * 0.04 + sn[0] * 0.045, P[1] + (cym - P[1]) * 0.04 + sn[1] * 0.045, P[2] + (czm - P[2]) * 0.04 + sn[2] * 0.045];
-        if (occluded(world, q[0], q[1], q[2])) c = s * SHADOW;
-      }
-      pos.push(P[0], P[1], P[2]); col.push(c, c, c);
-    }
+    const P = [0, 0, 0];
+    const at = (u, v) => {
+      const a = (1 - u) * (1 - v), b = u * (1 - v), c = u * v, d = (1 - u) * v;
+      P[0] = p[0][0] * a + p[1][0] * b + p[2][0] * c + p[3][0] * d; P[1] = p[0][1] * a + p[1][1] * b + p[2][1] * c + p[3][1] * d; P[2] = p[0][2] * a + p[1][2] * b + p[2][2] * c + p[3][2] * d;
+      return P;
+    };
+    // マスの中の5か所で、光がさえぎられるかを見て、割合でやわらかく暗くする
+    const offs = [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]];
+    const cs = [];
+    let lo = 9, hi = -9;
     for (let j = 0; j < SUB; j++) for (let i = 0; i < SUB; i++) {
-      const a = base + j * n1 + i, b = a + 1, c2 = a + n1 + 1, d = a + n1;
-      idx.push(a, b, c2, a, c2, d);
+      let c = s;
+      if (facing) {
+        let hit = 0;
+        for (const [a, b] of offs) {
+          const P = at((i + a) / SUB, (j + b) / SUB);
+          if (occluded(world, P[0] + sn[0] * 0.045, P[1] + sn[1] * 0.045, P[2] + sn[2] * 0.045)) hit++;
+        }
+        c = s * (1 - (1 - SHADOW) * (hit / offs.length));
+      }
+      cs.push(c); if (c < lo) lo = c; if (c > hi) hi = c;
     }
+    const emit = (u0, v0, u1, v1, c) => {
+      const base = pos.length / 3;
+      for (const [u, v] of [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]) { const P = at(u, v); pos.push(P[0], P[1], P[2]); col.push(c, c, c); }
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    };
+    if (hi - lo < 0.004) { emit(0, 0, 1, 1, cs[0]); return; }   // 影がなければ1まい(三角形をふやさない)
+    for (let j = 0; j < SUB; j++) for (let i = 0; i < SUB; i++) emit(i / SUB, j / SUB, (i + 1) / SUB, (j + 1) / SUB, cs[j * SUB + i]);
   };
   for (let x = cx * CH; x < cx * CH + CH; x++) for (let z = cz * CH; z < cz * CH + CH; z++) for (let y = YMIN; y < YMIN + YN; y++) {
     const v = world.get(x, y, z);
@@ -170,7 +189,7 @@ export function buildChunk(world, cx, cz) {
     if (v & BLOCK) {
       for (const f of FACES) {
         if (world.get(x + f.n[0], y + f.n[1], z + f.n[2]) & BLOCK) continue;
-        quad(f.v.map((q) => [x + q[0], y + q[1], z + q[2]]), f.n, shade(f.n), true);
+        quad(f.v.map((q) => [x + q[0], y + q[1], z + q[2]]), f.n, shade(f.n));
       }
     } else {
       for (let i = 0; i < 12; i++) {
@@ -184,7 +203,7 @@ export function buildChunk(world, cx, cz) {
         const corner = (sb, sc) => [ctr[0] + B[0] * hb * sb + C[0] * hc * sc, ctr[1] + B[1] * hb * sb + C[1] * hc * sc, ctr[2] + B[2] * hb * sb + C[2] * hc * sc];
         const toSun = pl.n[0] * SUN[0] + pl.n[1] * SUN[1] + pl.n[2] * SUN[2] >= 0;
         const sn = toSun ? pl.n : pl.n.map((q) => -q);
-        quad([corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], sn, Math.max(shade(pl.n), shade(pl.n.map((q) => -q))), true);
+        quad([corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], sn, Math.max(shade(pl.n), shade(pl.n.map((q) => -q))));
       }
     }
   }

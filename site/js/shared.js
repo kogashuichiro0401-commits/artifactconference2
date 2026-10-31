@@ -15,4 +15,4 @@ export const keyOf = (x, y, z) => `${x},${y},${z}`;
 // a から b への、ループを考えた最短の差(-n/2 〜 n/2)
 export const wrapDelta = (a, b, n) => { let d = mod(b - a, n); if (d > n / 2) d -= n; return d; };
 // 太陽の向き(世界の「西」=-x の、すこし上。夕日)。光の来る方向のベクトル
-export const SUN = (() => { const l = [-0.84, 0.5, 0.1], m = Math.hypot(...l); return l.map((v) => v / m); })();
+export const SUN = (() => { const l = [-0.9, 0.3, 0.1], m = Math.hypot(...l); return l.map((v) => v / m); })();

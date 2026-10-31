@@ -214,7 +214,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       setTimeout(() => el.classList.add("out"), 3000);
       setTimeout(() => el.remove(), 3600);
     },
-    setPose: (text) => { $("pose").textContent = text; },
+    setPose: () => {},
     setResume: (on) => { $("resume").hidden = !on; },
     // 右上の「オンライン」表示。lines の先頭が見出し、"*" で始まる行は自分
     setOnline: (lines) => {
