@@ -20,7 +20,7 @@ function heartSVG(color, highlight) {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 const HINT = "<b>WASD</b>=移動　<b>Space</b>=ジャンプ(2回=飛行、飛行中 Space↑ Shift↓)　<b>W/Sを2回</b>=ダッシュ　<b>Shift</b>=しゃがみ<br>" +
-  "落下中に<b>Space</b>=エリトラ(右クリック=ロケット花火)　<b>F5</b>=視点　<b>ホイール</b>=ズーム　<b>E</b>=持ち物　<b>Esc</b>=メニュー";
+  "落下中に<b>Space</b>=エリトラ(ロケット花火を持って右クリック)　<b>F5</b>=視点　<b>ホイール</b>=ズーム　<b>E</b>=持ち物　<b>Esc</b>=メニュー";
 
 const BOOK = `
   <h2>使い方の本</h2>
@@ -28,7 +28,8 @@ const BOOK = `
     <li><b>WASD</b>…あるく。<b>Space</b>…ジャンプ。すばやく2回押すと、空を飛べる(飛行中は Space で上、Shift で下)</li>
     <li><b>WかSを2回</b>…ダッシュ。<b>Shift</b>…しゃがむ</li>
     <li>落下している間に <b>Space</b>…エリトラが開いて、滑空できる。急降下で加速、上向きで減速。もう一度 Space で閉じる</li>
-    <li>滑空中の<b>右クリック</b>…ロケット花火で加速する</li>
+    <li><b>ロケット花火</b>は持ち物(5番)。持って、滑空中に<b>右クリック</b>(スマホは長タップ)で加速する</li>
+    <li><b>左クリック</b>(スマホはタップ)…なぐる。ダメージ1とノックバック。矢が当たっても同じ。本は<b>右クリック</b>(スマホは長タップ)で開く</li>
     <li><b>マウス</b>…見る方向。<b>ホイール</b>…ズーム。<b>F5</b>…視点の切り替え(一人称/後ろ/前)</li>
     <li><b>十字の先</b>のブロック/プレートは、黒い細い枠で囲まれる</li>
     <li>(管理者だけ)<b>F4</b>…建築破壊モード。<b>左クリック</b>=壊す、<b>右クリック</b>=置く(白いブロック/プレートを持っているとき)。プレートは、目線に垂直な向きのものが薄く表示されて置かれる。<b>C</b>…プレートの置き方(自動/面だけ/斜めだけ)</li>
@@ -41,6 +42,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
   const inv = new Array(36).fill(null);   // 0〜8がホットバー
   inv[0] = "bow";
   inv[1] = "book";
+  inv[4] = "rocket";
   const setItems = (admin) => { inv[2] = admin ? "block" : null; inv[3] = admin ? "plate" : null; };
   let sel = 0, hp = 20, nameTimer = 0, entered = false, updateVer = null, user = null, sayTimer = 0;
 
@@ -117,8 +119,9 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
   const K = (...k) => k.map((x) => `<kbd>${x}</kbd>`).join(" ");
   const KEYS = [
     ["移動", ["歩く", K("W", "A", "S", "D")], ["ダッシュ", K("W") + " か " + K("S") + " を2回"], ["しゃがむ", K("Shift")]],
-    ["空中", ["ジャンプ", K("Space")], ["飛行(管理者のみ)", K("Space") + " を2回 → 上 " + K("Space") + " / 下 " + K("Shift")], ["エリトラ", "落下中に " + K("Space") + "(もう一度で閉じる)"], ["ロケット花火", "滑空中に右クリック"]],
+    ["空中", ["ジャンプ", K("Space")], ["飛行(管理者のみ)", K("Space") + " を2回 → 上 " + K("Space") + " / 下 " + K("Shift")], ["エリトラ", "落下中に " + K("Space") + "(もう一度で閉じる)"], ["ロケット花火", "花火を持って(5)、滑空中に右クリック / 長タップ"]],
     ["画面", ["視点", K("F5")], ["ズーム", "ホイール"], ["座標など", K("F3")], ["16×16の区切り", K("F2")], ["メニュー", K("Esc")], ["スタート地点へ", K("R")]],
+    ["戦う", ["なぐる", "左クリック / タップ(ダメージ1、ふき飛ぶ)"], ["弓", "弓を持って右クリックを長押し → はなす(当たるとダメージ1)"]],
     ["持ち物", ["切り替え", K("1") + "〜" + K("9")], ["持ち物の画面", K("E")]],
     ["建築(管理者のみ)", ["建築破壊モード", K("F4")], ["壊す / 置く", "左クリック / 右クリック(1クリックにつき1回)"], ["プレートの置き方", K("C") + "(自動 → 面だけ → 斜めだけ)"]],
   ];
@@ -158,7 +161,6 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}<span class="role">${user && user.role === "admin" ? "管理者" : "泳者"}</span></span><button class="pill" id="btn-logout">ログアウト</button></div>
       <button class="pill primary block" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
       <button class="pill block" id="btn-respawn">スタート地点にもどる (R)</button>
-      ${document.body.classList.contains("touch") ? '<button class="pill block line" id="btn-touchedit">ボタンの位置・大きさを調整</button>' : ""}
       <h2>設定</h2>
       <label>視野角 <input type="range" id="set-fov" min="50" max="110" step="1" value="${settings.fov}"><span id="set-fov-v">${settings.fov}</span></label>
       <label>マウス感度 <input type="range" id="set-sens" min="1" max="10" step="0.5" value="${settings.sens}"><span id="set-sens-v">${settings.sens}</span></label>
@@ -169,7 +171,6 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     $("btn-enter").onclick = () => { entered = true; onEnter(); };
     $("btn-logout").onclick = () => onLogout();
     $("btn-respawn").onclick = () => { onRespawn(); onEnter(); };
-    if ($("btn-touchedit")) $("btn-touchedit").onclick = () => onTouchEdit();
     const bind = (id, key) => {
       $(id).oninput = (e) => {
         settings[key] = +e.target.value;

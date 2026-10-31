@@ -86,6 +86,26 @@ export class Room {
     this.broadcast({ t: "edit", x, y, z, v });
   }
 
+  // なぐった/矢が当たった: 近さと間隔を確かめて、ダメージ1。当たった人にはノックバックの向きも送る
+  handleHit(ws, a, m) {
+    const kind = m.k === "arrow" ? "arrow" : "melee";
+    const now = Date.now();
+    if (now - (a.hitAt || 0) < (kind === "arrow" ? 150 : 350)) return;
+    const target = this.players().find((p) => p.a.id === m.id);
+    if (!target || target.a.id === a.id) return;
+    const T = target.a;
+    const dx = wrapDelta(a.x, T.x, N), dy = wrapDelta(a.y, T.y, YN), dz = wrapDelta(a.z, T.z, N);
+    if (Math.hypot(dx, dy, dz) > (kind === "arrow" ? 90 : 5.5)) return;
+    a.hitAt = now; ws.serializeAttachment(a);
+    // 体力は3秒に1つ、もどる(ここで数え直す)
+    const base = Math.min(20, (T.hp ?? 20) + Math.floor((now - (T.hpAt || now)) / 3000));
+    const left = base - 1, dead = left <= 0;
+    T.hp = dead ? 20 : left; T.hpAt = now;
+    target.ws.serializeAttachment(T);
+    this.broadcast({ t: "hit", id: T.id });
+    this.send(target.ws, { t: "hurt", hp: T.hp, dead, kx: r2(dx), kz: r2(dz), by: a.name });
+  }
+
   async fetch(request) {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("WebSocketでつないでください", { status: 426 });
     const pair = new WebSocketPair();
@@ -146,7 +166,7 @@ export class Room {
         try { ws.close(1000, "full"); } catch (e) { /* すでに閉じている */ }
         return;
       }
-      const me = { id: crypto.randomUUID().slice(0, 8), uid: user.uid, name: cleanName(user.name), admin: !!user.admin, ...pose(m), at: 0 };
+      const me = { id: crypto.randomUUID().slice(0, 8), uid: user.uid, name: cleanName(user.name), admin: !!user.admin, ...pose(m), at: 0, hp: 20, hpAt: Date.now() };
       ws.serializeAttachment(me);
       const edits = [];
       for (const [k, v] of this.edits) { const [ex, ey, ez] = k.split(",").map(Number); edits.push([ex, ey, ez, v]); }
@@ -165,6 +185,14 @@ export class Room {
       this.broadcast(posMsg(a), ws);
     } else if (m.t === "edit") {
       this.handleEdit(ws, a, m);
+    } else if (m.t === "swing") {
+      // 手をふった: ほかの全員に知らせる(見た目だけ)
+      const now = Date.now();
+      if (now - (a.swAt || 0) < 120) return;
+      a.swAt = now; ws.serializeAttachment(a);
+      this.broadcast({ t: "swing", id: a.id }, ws);
+    } else if (m.t === "hit") {
+      this.handleHit(ws, a, m);
     } else if (m.t === "shoot") {
       // 矢を撃った: 近くから、ふつうの速さで撃ったものだけ、ほかの全員に知らせる(飛び方は各画面で同じ計算)
       const now = Date.now();

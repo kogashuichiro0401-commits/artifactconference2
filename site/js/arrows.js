@@ -4,7 +4,8 @@ import { N, YMIN, YN, mod, wrapDelta } from "./shared.js";
 
 const TICK = 0.05, DRAG = 0.99, GRAV = 0.05, STUCK_LIFE = 3.0, FLY_LIFE = 12;
 
-export function createArrows(T, scene, world) {
+// hitTest(a,b) → { id, t } か null (線分が人に当たるか)、onHit(id) → 当たったと知らせる。自分が撃った矢だけが調べる
+export function createArrows(T, scene, world, hitTest, onHit) {
   const shaftGeo = new T.BoxGeometry(0.035, 0.035, 0.8);
   const headGeo = new T.ConeGeometry(0.06, 0.16, 6); headGeo.rotateX(-Math.PI / 2); headGeo.translate(0, 0, -0.48);
   const fletchGeo = new T.BoxGeometry(0.13, 0.012, 0.16);
@@ -26,9 +27,9 @@ export function createArrows(T, scene, world) {
     setViewer(p) { viewer = p; },
     debug() { return list.map((a) => ({ p: a.p.map((v) => +v.toFixed(2)), stuck: a.stuck, life: +a.life.toFixed(1) })); },
     // 撃つ。pos: 位置、vel: 1tickあたりの速度(マイクラと同じ単位)
-    shoot(pos, vel) {
+    shoot(pos, vel, mine) {
       if (list.length > 60) { scene.remove(list[0].g); list.shift(); }
-      list.push({ g: make(), p: [pos[0], pos[1], pos[2]], q: [pos[0], pos[1], pos[2]], v: [vel[0], vel[1], vel[2]], stuck: false, life: FLY_LIFE });
+      list.push({ g: make(), p: [pos[0], pos[1], pos[2]], q: [pos[0], pos[1], pos[2]], v: [vel[0], vel[1], vel[2]], mine: !!mine, stuck: false, life: FLY_LIFE });
     },
     update(dt) {
       acc += dt;
@@ -41,6 +42,10 @@ export function createArrows(T, scene, world) {
           const len = Math.hypot(a.v[0], a.v[1], a.v[2]);
           const d = [a.v[0] / len, a.v[1] / len, a.v[2] / len];
           const hit = world.raycast(a.p, d, len, false);
+          if (a.mine && hitTest) {   // 人に当たったか(ブロックより手前のとき)
+            const ph = hitTest(a.p, [a.p[0] + a.v[0], a.p[1] + a.v[1], a.p[2] + a.v[2]]);
+            if (ph && (!hit || ph.t * len < hit.t)) { a.stuck = true; a.life = 0; if (onHit) onHit(ph.id); continue; }
+          }
           if (hit) {   // あたったところに刺さる
             a.p = hit.point.slice(); a.stuck = true; a.life = STUCK_LIFE; a.q = a.p.slice();
             continue;

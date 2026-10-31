@@ -24,13 +24,14 @@ export class Controls {
     this.gAcc = 0;
     this.kick = 0;
     this.rocketT = 1;              // ロケットを打ったあとの手の動き
+    this.swingP = 0;               // 手をふる動き(0=していない、0〜1で進む)
+    this.kbT = 0;                  // ノックバックで、ふき飛ばされている残り時間
     this.p = { zm: 1, zt: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, ground: false, glide: false, boost: 0, fly: false, sprint: false, sneak: false, view: 0, fov: 70, bodyYaw: 0, t: 0 };
     this.respawn();
     win.addEventListener("keydown", (e) => this.key(e, true));
     win.addEventListener("keyup", (e) => this.key(e, false));
     win.addEventListener("blur", () => this.release());
     doc.addEventListener("mousemove", (e) => this.mouse(e));
-    win.addEventListener("mousedown", (e) => { if (this.locked && e.button === 2 && this.p.glide && this.cfg.rks) this.fireRocket(e); }, true);
   }
 
   respawn() {
@@ -41,6 +42,16 @@ export class Controls {
   eyeH() { return this.p.sneak ? 1.27 : 1.62; }
   curH() { return this.p.sneak ? 1.5 : 1.8; }
   lookDir() { const p = this.p, cp = Math.cos(p.pitch); return [-Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp]; }
+
+  // 手をふる(なぐる・壊す・置くとき)
+  swing() { this.swingP = 0.001; }
+  // ふき飛ばされる(kx,kz は水平の向き。マイクラの近接攻撃と同じくらい)
+  knock(kx, kz, power = 1) {
+    const p = this.p, l = Math.hypot(kx, kz) || 1;
+    p.vx = (kx / l) * 8 * power; p.vz = (kz / l) * 8 * power;
+    if (!p.fly) { p.vy = Math.max(p.vy, 6.5 * power); p.ground = false; }
+    this.kbT = 0.4;
+  }
 
   fireRocket(e) {
     if (e) e.preventDefault();
@@ -82,7 +93,7 @@ export class Controls {
         else {
           this.lastSp = now;
           if (p.glide) { p.glide = false; p.boost = 0; this.say("滑空を終えました(自由落下)"); }
-          else if (this.cfg.ely && !p.fly && !p.ground && p.vy < -1) { p.glide = true; this.say("エリトラが開きました(右クリック=ロケット花火)"); }
+          else if (this.cfg.ely && !p.fly && !p.ground && p.vy < -1) { p.glide = true; this.say("エリトラが開きました(ロケット花火を持って右クリック)"); }
         }
         this.kick = 1;
       }
@@ -141,6 +152,8 @@ export class Controls {
   update(dt) {
     const p = this.p, keys = this.keys;
     if (this.rocketT < 1) this.rocketT = Math.min(1, this.rocketT + dt / 0.4);
+    if (this.swingP > 0) { this.swingP += dt / 0.28; if (this.swingP >= 1) this.swingP = 0; }
+    if (this.kbT > 0) this.kbT -= dt;
     if (p.glide && (p.fly || p.ground || !this.cfg.ely)) { p.glide = false; p.boost = 0; }
     const gv = p.glide ? [p.vx, p.vy, p.vz] : null;
     let f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), s = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
@@ -154,7 +167,7 @@ export class Controls {
     const sp = p.fly ? (p.sprint ? 21 : 10.9) : p.sneak ? 1.31 : p.sprint ? 5.6 : 4.32;
     const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
     const tx = (-sy * f + cy * s) * sp, tz = (-cy * f - sy * s) * sp;
-    const rate = p.ground ? 16 : p.fly ? 6 : 4, k = 1 - Math.exp(-rate * dt);
+    const rate = this.kbT > 0 ? 1.2 : p.ground ? 16 : p.fly ? 6 : 4, k = 1 - Math.exp(-rate * dt);
     p.vx += (tx - p.vx) * k; p.vz += (tz - p.vz) * k;
     if (p.fly) {
       const ty = ((keys.Space ? 1 : 0) - (keys.Shift ? 1 : 0)) * 8;

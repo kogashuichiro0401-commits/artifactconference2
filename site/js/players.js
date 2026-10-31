@@ -113,7 +113,7 @@ export class RemotePlayers {
     const pose = { x: p.x, y: p.y, z: p.z, yaw: p.yaw || 0, pitch: p.pitch || 0 };
     this.map.set(p.id, {
       av, tag, name: p.name || "ななし", cur: { ...pose }, tgt: { ...pose }, flags: { fly: !!p.fly, sneak: !!p.sneak, glide: !!p.glide },
-      speed: 0, bodyYaw: pose.yaw,
+      speed: 0, bodyYaw: pose.yaw, swing: 0, flash: 0, mats: null,
     });
     av.root.position.set(pose.x, pose.y, pose.z);
   }
@@ -140,6 +140,42 @@ export class RemotePlayers {
     if (!e || e.name === name) return;
     e.av.root.remove(e.tag); this.disposeTag(e.tag); e.tag = this.makeTag(name); e.av.root.add(e.tag); e.name = name;
   }
+  // 手をふる / あたって赤くなる
+  swing(id) { const e = this.map.get(id); if (e) e.swing = 0.001; }
+  flash(id) { const e = this.map.get(id); if (e) e.flash = 0.25; }
+
+  // 体の箱(足もとが中心、幅0.6、高さ1.8)。ループする世界なので、基準の点にいちばん近いコピーで調べる
+  boxAt(e, ref) {
+    const c = e.cur, x = ref[0] + wrapDelta(ref[0], c.x, N), y = ref[1] + wrapDelta(ref[1], c.y, YN), z = ref[2] + wrapDelta(ref[2], c.z, N);
+    return [x - 0.3, y, z - 0.3, x + 0.3, y + (e.flags.sneak ? 1.5 : 1.8), z + 0.3];
+  }
+  // 線分 a→b が当たる最初の人。{ id, t(0〜1) } か null (pad: 箱を少し太らせる)
+  segHit(a, b, pad = 0.05) {
+    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let best = null;
+    for (const [id, e] of this.map) {
+      const bx = this.boxAt(e, a);
+      let t0 = 0, t1 = 1, ok = true;
+      for (let k = 0; k < 3 && ok; k++) {
+        const lo = bx[k] - pad, hi = bx[k + 3] + pad;
+        if (Math.abs(d[k]) < 1e-9) { if (a[k] < lo || a[k] > hi) ok = false; }
+        else {
+          let u = (lo - a[k]) / d[k], v = (hi - a[k]) / d[k];
+          if (u > v) { const w = u; u = v; v = w; }
+          t0 = Math.max(t0, u); t1 = Math.min(t1, v);
+          if (t0 > t1) ok = false;
+        }
+      }
+      if (ok && (!best || t0 < best.t)) best = { id, t: t0 };
+    }
+    return best;
+  }
+  // 目から向きdirへ、reach ブロック先までで、最初に当たる人。{ id, t(ブロック数) }
+  pick(eye, dir, reach) {
+    const b = [eye[0] + dir[0] * reach, eye[1] + dir[1] * reach, eye[2] + dir[2] * reach];
+    const h = this.segHit(eye, b, 0);
+    return h ? { id: h.id, t: h.t * reach } : null;
+  }
   count() { return this.map.size; }
   names() { return [...this.map.values()].map((e) => e.name); }
 
@@ -157,7 +193,15 @@ export class RemotePlayers {
       if (f.glide) e.bodyYaw = c.yaw;
       else if (moving) e.bodyYaw += dy * (1 - Math.exp(-12 * dt));
       else if (Math.abs(dy) > 0.9) e.bodyYaw = c.yaw - Math.sign(dy) * 0.9;
-      e.av.pose({ hs: e.speed, bodyYaw: e.bodyYaw, yaw: c.yaw, pitch: c.pitch, glide: f.glide, fly: f.fly, sneak: f.sneak, air: f.fly || f.glide }, dt);
+      if (e.swing > 0) { e.swing += dt / 0.28; if (e.swing >= 1) e.swing = 0; }
+      if (e.flash > 0 || e.mats) {
+        if (!e.mats) { e.mats = []; e.av.root.traverse((o) => { if (o.material && o.material.emissive) e.mats.push(o.material); }); }
+        if (e.flash > 0) e.flash -= dt;
+        const on = e.flash > 0;
+        for (const m of e.mats) m.emissive.setHex(on ? 0xaa2222 : 0x000000);
+        if (!on) e.mats = null;
+      }
+      e.av.pose({ swing: e.swing, hs: e.speed, bodyYaw: e.bodyYaw, yaw: c.yaw, pitch: c.pitch, glide: f.glide, fly: f.fly, sneak: f.sneak, air: f.fly || f.glide }, dt);
       const v = this.viewer;   // 世界はループしているので、自分にいちばん近い位置に出す
       e.av.root.position.set(v.x + wrapDelta(v.x, c.x, N), v.y + wrapDelta(v.y, c.y, YN), v.z + wrapDelta(v.z, c.z, N));
       e.tag.position.y = f.sneak ? 2.0 : 2.2;

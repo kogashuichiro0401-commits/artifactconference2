@@ -38,6 +38,7 @@ export function createFirstPerson(T, camera, scene, controls) {
 
   return function update(dt, bs) {
     const first = p.view === 0;
+    const sw = controls.swingP, sa = sw > 0 ? Math.sin(sw * Math.PI) : 0;   // 手をふる: 前へ振り下ろして、もどる
     hand.visible = first;
     const showBow = first && bs && bs.held && !p.glide;
     bow.visible = !!showBow;
@@ -48,10 +49,11 @@ export function createFirstPerson(T, camera, scene, controls) {
       arrow.visible = arrowHead.visible = c > 0;
       arrow.position.set(0, 0, nock.z - 0.36); arrowHead.position.set(0, 0, nock.z - 0.76);
       bow.position.set(0.32 - c * 0.1, -0.2 + c * 0.04, -0.6 + c * 0.05);
-      hand.visible = false;
+      hand.visible = sa > 0;   // 弓を持ったままなぐるときは、手をふる
     }
-    hand.rotation.x = 1.15 - Math.sin(p.t * 8) * Math.min(1, (controls.hs || 0) / 4.3) * 0.25;
-    handL.visible = first && p.glide && controls.cfg.rks;
+    hand.rotation.x = 1.15 - Math.sin(p.t * 8) * Math.min(1, (controls.hs || 0) / 4.3) * 0.25 - sa * 1.0;
+    hand.position.set(0.42 - sa * 0.18, -0.42 + sa * 0.1, -0.55 - sa * 0.22);
+    handL.visible = first && bs && bs.item === "rocket" && controls.cfg.rks;
     if (handL.visible) {
       const lf = Math.sin(controls.rocketT * Math.PI), sh = p.boost > 0 ? (Math.random() - 0.5) * 0.012 : 0;
       handL.rotation.set(1.2 + lf * 0.5, -0.2, 0.12);

@@ -1,7 +1,8 @@
 // スマホ・タブレットの操作(マイクラPE風)。
 //  左: 十字キー(移動)と中央ボタン(ダブルタップでしゃがむ/解除)  右: ジャンプ(Spaceと同じ)
-//  画面のどこかをドラッグ=見まわす / タップ=置く / 少し長くおす=壊す / 弓は、おしつづけてため、はなして発射
-//  上: メニュー・建築モード・プレートの置き方・ボタン配置。ボタンの位置と大きさは、左右べつべつに変えられる。
+//  画面のどこかをドラッグ=見まわす / タップ=なぐる(建築モードでは置く) / 少し長くおす=アイテムを使う(建築モードでは壊す)
+//  弓は、おしつづけてため、はなして発射(ちょん、と押すだけならなぐる)
+//  上: キーのボタン(Esc E F2 F3 F4 F5)。Escでメニューが開いているときだけ、ボタン配置のアイコンが出る。
 const STORE = "craft-touch-layout";
 const DEF = { l: { x: 0.15, y: 0.7, s: 1 }, r: { x: 0.87, y: 0.72, s: 1 } };
 const BASE_L = 156, BASE_R = 92;
@@ -30,10 +31,14 @@ export function createTouch(o) {
     <div id="tl" class="tc"><div class="tb up">${ARROW(0)}</div><div class="tb right">${ARROW(90)}</div><div class="tb down">${ARROW(180)}</div><div class="tb left">${ARROW(270)}</div><div class="tb mid"></div><span class="tlabel">十字キー</span></div>
     <div id="tr" class="tc"><div class="tb jump">${ARROW(0)}</div><span class="tlabel">ジャンプ</span></div>
     <div id="tbar">
-      <button id="tb-menu" class="tbtn">メニュー</button>
-      <button id="tb-build" class="tbtn" hidden>建築</button>
-      <button id="tb-plate" class="tbtn" hidden>板</button>
-      <button id="tb-edit" class="tbtn icon" title="ボタン配置" aria-label="ボタン配置">${HAND}</button>
+      <button class="tbtn key" data-k="Escape">Esc</button>
+      <button class="tbtn key" data-k="KeyE">E</button>
+      <button class="tbtn key" data-k="F2">F2</button>
+      <button class="tbtn key" data-k="F3">F3</button>
+      <button class="tbtn key" id="tb-build" data-k="F4">F4</button>
+      <button class="tbtn key" data-k="F5">F5</button>
+      <button id="tb-plate" class="tbtn key" data-k="KeyC" hidden>C</button>
+      <button id="tb-edit" class="tbtn icon" title="ボタン配置" aria-label="ボタン配置" hidden>${HAND}</button>
     </div>
     <div id="tedit" hidden><div class="tpanel">
       <b>ボタン配置</b><span class="tsub">ボタンをドラッグして、位置を変えられます</span>
@@ -107,7 +112,7 @@ export function createTouch(o) {
   look.addEventListener("pointerdown", (e) => {
     if (editing || o.blocked() || g) return;
     e.preventDefault(); look.setPointerCapture(e.pointerId);
-    g = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, long: false, bow: false, timer: 0 };
+    g = { t0: performance.now(), id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, long: false, bow: false, timer: 0 };
     if (o.isBow() && !controls.p.glide) { g.bow = true; o.bowDown(); }
     else g.timer = setTimeout(() => { if (g && !g.moved) { g.long = true; if (navigator.vibrate) navigator.vibrate(15); o.longPress(); } }, LONG_MS);
   });
@@ -120,17 +125,19 @@ export function createTouch(o) {
   const end = (e, cancel) => {
     if (!g || e.pointerId !== g.id) return;
     clearTimeout(g.timer);
-    if (g.bow) o.bowUp(cancel);
-    else if (!cancel && !g.moved && !g.long) o.tap();
+    if (g.bow) {
+      if (!cancel && !g.moved && performance.now() - g.t0 < 180) { o.bowUp(true); o.tap(); }   // ちょん、と押しただけ → なぐる
+      else o.bowUp(cancel);
+    } else if (!cancel && !g.moved && !g.long) o.tap();
     g = null;
   };
   look.addEventListener("pointerup", (e) => end(e, false));
   look.addEventListener("pointercancel", (e) => end(e, true));
 
   // ----- 上のボタン -----
-  $("tb-menu").onclick = () => o.menu();
-  $("tb-build").onclick = () => o.build();
-  $("tb-plate").onclick = () => o.plate();
+  for (const b of root.querySelectorAll("#tbar .key")) {
+    b.addEventListener("click", () => { if (b.dataset.k === "Escape") o.menu(); else o.key(b.dataset.k); });
+  }
   $("tb-edit").onclick = () => startEdit();
 
   // ----- ボタン配置の調整 -----
@@ -159,8 +166,9 @@ export function createTouch(o) {
   setInterval(() => { midEl.classList.toggle("on", !!controls.keys.Shift); }, 150);
 
   return {
-    setAdmin(a) { $("tb-build").hidden = !a; if (!a) $("tb-plate").hidden = true; },
+    setAdmin(a) { if (!a) $("tb-plate").hidden = true; },
     setBuild(on) { $("tb-build").classList.toggle("on", on); $("tb-plate").hidden = !on; },
+    setMenu(open) { $("tb-edit").hidden = !open; },
     startEdit,
     isEditing: () => editing,
     releaseAll() { releaseDpad(); press("Space", false); if (g) { clearTimeout(g.timer); if (g.bow) o.bowUp(true); g = null; } },

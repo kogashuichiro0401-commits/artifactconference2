@@ -110,6 +110,8 @@ kbd{display:inline-block;min-width:22px;padding:0 6px;margin:0 1px;border:1px so
 .brand .filebtn:hover{background:var(--surface)}
 .brand .filebtn svg{width:26px;height:26px;stroke:var(--accent)}
 #logbox{margin-top:8px}
+#hurt{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(200,0,0,0) 45%,rgba(200,0,0,.5) 100%);opacity:0;transition:opacity .35s}
+#hurt.on{opacity:1;transition:none}
 #charge{position:absolute;left:50%;top:calc(50% + 26px);width:64px;height:6px;margin-left:-32px;border:1px solid rgba(255,255,255,.85);background:rgba(0,0,0,.35);border-radius:3px;overflow:hidden}
 #charge i{display:block;height:100%;width:0;background:#fff}
 #charge.full i{background:#ffe14d}
@@ -131,6 +133,8 @@ body.ui #tlook,body.ui #tl,body.ui #tr{display:none}
 .tlabel{display:none}
 #tbar{position:absolute;left:50%;top:max(6px,env(safe-area-inset-top));transform:translateX(-50%);display:flex;gap:6px;pointer-events:auto;z-index:8}
 .tbtn{height:34px;padding:0 14px;border-radius:17px;border:1px solid rgba(255,255,255,.55);background:rgba(0,0,0,.42);color:#fff;font-size:13px;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.6);touch-action:manipulation}
+.tbtn.key{min-width:34px;height:30px;padding:0 8px;border-radius:8px;font-size:12px;font-family:ui-monospace,Consolas,monospace}
+#tbar{gap:4px}
 .tbtn.icon{width:36px;padding:0;display:grid;place-items:center}
 .tbtn.on{background:rgba(31,78,158,.85);border-color:#fff}
 .tbtn.ok{background:var(--accent);color:var(--accent-fg);border-color:transparent;min-width:84px}
@@ -141,18 +145,22 @@ body.ui #tlook,body.ui #tl,body.ui #tr{display:none}
 #touch.editing .tc{outline:2px dashed #fff;outline-offset:4px;z-index:6}
 #touch.editing .tlabel{display:block;position:absolute;left:50%;top:-24px;transform:translateX(-50%);color:#fff;font-size:12px;white-space:nowrap;text-shadow:0 1px 2px #000}
 #trotate{display:none}
-body.touch{--slot:38px}
+body.touch{--slot:30px}
+body.touch:not(.ui) #hud{z-index:6}
 body.touch #hotbar,body.touch #hotbar .slot{pointer-events:auto;touch-action:manipulation}
 body.touch #bottom{bottom:max(6px,env(safe-area-inset-bottom))}
-body.touch .heart,body.touch .heart svg{width:14px;height:14px}
-body.touch #hearts{height:14px;margin-bottom:4px}
-body.touch .slot svg{width:28px;height:28px}
+body.touch .heart,body.touch .heart svg{width:12px;height:12px}
+body.touch #hearts{height:12px;margin-bottom:3px}
+body.touch .slot svg{width:22px;height:22px}
+body.touch .slot{border-width:1px;border-radius:3px}
+body.touch #hotbar{gap:2px;padding:3px}
+body.touch #itemname{height:16px;font-size:12px;margin-bottom:2px}
 body.touch #selfview{width:70px;height:89px}
 body.touch #minimap{width:96px;height:96px}
 body.touch #left{left:max(6px,env(safe-area-inset-left));top:max(6px,env(safe-area-inset-top))}
 body.touch #right{right:max(6px,env(safe-area-inset-right));top:max(6px,env(safe-area-inset-top));font-size:11px}
 body.touch #online{font-size:11px;padding:4px 8px}
-body.touch #mode{top:48px}
+body.touch #mode{top:44px}
 body.touch #update{top:52px}
 body.touch #compass{width:28px;height:28px}
 body.touch .panel{touch-action:pan-y}

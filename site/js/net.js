@@ -36,6 +36,9 @@ export class Net {
     this.send({ t: "shoot", x: pos[0], y: pos[1], z: pos[2], vx: vel[0], vy: vel[1], vz: vel[2] });
   }
 
+  sendSwing() { this.send({ t: "swing" }); }
+  sendHit(id, k) { this.send({ t: "hit", id, k }); }
+
   sendEdit(op, x, y, z, i) {
     this.send({ t: "edit", op, x, y, z, i });
   }
@@ -93,6 +96,9 @@ export class Net {
       case "name": this.h.onName(m); break;
       case "edit": this.h.onEdit(m); break;
       case "arrow": if (this.h.onArrow) this.h.onArrow(m); break;
+      case "swing": if (this.h.onSwing) this.h.onSwing(m); break;
+      case "hit": if (this.h.onHit) this.h.onHit(m); break;
+      case "hurt": if (this.h.onHurt) this.h.onHurt(m); break;
       case "deny": this.h.onDeny(m); break;
       case "auth": this.wanted = false; this.h.onAuth(); break;
       case "kicked": this.wanted = false; this.h.onKicked(); break;

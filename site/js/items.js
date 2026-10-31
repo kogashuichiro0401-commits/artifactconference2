@@ -28,9 +28,20 @@ const BOOK_ICON = svg(`
   <path d="M40 10 H26 C25 10 24 11 24 12 V40 C24 39 25 38 26 38 H40 Z" fill="#8f5aa3" stroke="#43264f" stroke-width="1.6"/>
   <path d="M12 16 H20 M12 21 H20 M28 16 H36 M28 21 H36" stroke="#e8d9ef" stroke-width="1.4"/>`);
 
+// ロケット花火: 赤い筒に、先の尖った頭と、炎
+const ROCKET_ICON = svg(`
+  <polygon points="24,14 29,20 19,20" fill="#e8e8e8" stroke="#55585d" stroke-width="1.2"/>
+  <rect x="19" y="20" width="10" height="16" fill="#d8503a" stroke="#6b2418" stroke-width="1.4"/>
+  <rect x="19" y="25" width="10" height="3.5" fill="#f4d9a8"/>
+  <polygon points="19,32 13,40 19,38" fill="#a83a28" stroke="#6b2418" stroke-width="1"/>
+  <polygon points="29,32 35,40 29,38" fill="#a83a28" stroke="#6b2418" stroke-width="1"/>
+  <polygon points="24,37 28,45 24,42 20,45" fill="#ffa030" stroke="#c96a10" stroke-width="1"/>
+  <path d="M38 8 l1.4 3 3 1.4 -3 1.4 -1.4 3 -1.4 -3 -3 -1.4 3 -1.4z" fill="#ffd84d"/>`);
+
 export const ITEMS = {
   bow: { name: "弓(右クリックを長押しでためて、はなす)", icon: BOW_ICON },
   book: { name: "使い方の本", icon: BOOK_ICON },
   block: { name: "白いブロック", icon: BLOCK_ICON },
   plate: { name: "白いプレート", icon: PLATE_ICON },
+  rocket: { name: "ロケット花火(滑空中に右クリック / 長タップ)", icon: ROCKET_ICON },
 };

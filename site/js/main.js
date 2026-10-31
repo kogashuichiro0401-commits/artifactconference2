@@ -138,7 +138,7 @@ resize();
 let hud;
 const controls = new Controls({ world, spawn: world.spawn, win: window, doc: document, say: (t) => hud && hud.say(t) });
 const firstPerson = createFirstPerson(THREE, camera, scene, controls);
-const arrows = createArrows(THREE, scene, world);
+const arrows = createArrows(THREE, scene, world, (a, b) => remotes.segHit(a, b), (id) => { if (net.ready()) net.sendHit(id, "arrow"); });
 const build = new BuildTool(THREE, scene, world);
 let isAdmin = false, buildMode = false;
 const me3d = createAvatar(THREE, "#c0392b");
@@ -156,7 +156,7 @@ function renderSelf(p, dt) {
   const r = selfEl.getBoundingClientRect();
   if (r.width < 2) return;
   selfCam.aspect = r.width / r.height; selfCam.updateProjectionMatrix();
-  selfAv.pose({ hs: controls.hs || 0, bodyYaw: p.bodyYaw, yaw: p.yaw, pitch: p.pitch, glide: p.glide, fly: p.fly, sneak: p.sneak, sprint: p.sprint, air: !p.ground, rocket: p.boost > 0 }, dt);
+  selfAv.pose({ hs: controls.hs || 0, bodyYaw: p.bodyYaw, yaw: p.yaw, pitch: p.pitch, glide: p.glide, fly: p.fly, sneak: p.sneak, sprint: p.sprint, air: !p.ground, rocket: p.boost > 0, swing: controls.swingP }, dt);
   const H = window.innerHeight;
   renderer.setScissorTest(true);
   renderer.setViewport(r.left, H - r.bottom, r.width, r.height);
@@ -216,6 +216,8 @@ let netState = "idle";   // idle | connecting | open | closed | full
 let everConnected = false;
 let myName = "";
 let forceSend = false;
+let hpNow = 20, regenT = 0;   // 体力(3秒に1つ回復)
+const hurtEl = document.getElementById("hurt");
 
 function poseNow() {
   const p = controls.p;
@@ -248,12 +250,21 @@ const net = new Net({
     for (const p of m.players) remotes.add(p);
     if (m.version !== VERSION) hud.setUpdate(m.version);   // 古い画面のまま遊んでいる
     forceSend = true;
+    hpNow = 20; hud.setHealth(20, false);
     refreshOnline();
   },
   onJoin: (p) => { remotes.add(p); refreshOnline(); },
   onLeave: (id) => { remotes.remove(id); refreshOnline(); },
   onPos: (m) => remotes.setPos(m),
   onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
+  onSwing: (m) => remotes.swing(m.id),
+  onHit: (m) => remotes.flash(m.id),
+  onHurt: (m) => {   // 自分がやられた: 体力・ノックバック
+    hpNow = m.hp; regenT = 0;
+    hurtEl.classList.add("on"); setTimeout(() => hurtEl.classList.remove("on"), 120);
+    if (m.dead) { controls.respawn(); hud.setHealth(20, false); hud.say((m.by ? m.by + " に" : "") + "やられました。スタート地点にもどります"); }
+    else { hud.setHealth(m.hp, true); controls.knock(m.kx, m.kz); }
+  },
   onEdit: (m) => world.set(m.x, m.y, m.z, m.v),
   onDeny: (m) => hud.say(m.why || "できません"),
   onName: (m) => { remotes.setName(m.id, m.name); refreshOnline(); },
@@ -296,6 +307,7 @@ function setPanel(name) {
   if (!user && name !== "login") name = "login";   // ログインしていない人は、世界に入れない
   panel = name;
   hud.show(name);
+  if (touch) touch.setMenu(name === "menu");
   if (name) { exitLock(); hud.setResume(false); } else { ensureOnline(); requestLock(); hud.setResume(!locked); }
 }
 
@@ -321,6 +333,34 @@ const sendEdit = (op, cu, i) => {   // cu: ループしていない通しの座�
   net.sendEdit(op, c[0], c[1], c[2], i);
   return true;
 };
+// 手をふる(自分の手と、ほかの人の画面)
+let swingSentAt = 0;
+function swingHand() {
+  controls.swing();
+  const now = performance.now();
+  if (net.ready() && now - swingSentAt > 150) { swingSentAt = now; net.sendSwing(); }
+}
+// なぐる(左クリック / タップ): 3ブロック先までの人にダメージ1。間に壁があると当たらない
+let lastHit = 0;
+function attack() {
+  swingHand();
+  const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z], now = performance.now();
+  const h = remotes.pick(eye, L, 3.2);
+  if (!h || now - lastHit < 380 || !net.ready()) return;
+  if (world.raycast(eye, L, h.t, false)) return;
+  lastHit = now;
+  net.sendHit(h.id, "melee");
+}
+// 持っているアイテムを使う(右クリック / 長タップ)
+function useItem() {
+  const it = hud.selectedItem();
+  if (it === "rocket") {
+    if (controls.p.glide && controls.cfg.rks) controls.fireRocket();
+    else hud.say("ロケット花火は、エリトラで滑空中に使えます");
+  } else if (it === "book") setPanel("book");
+}
+// 建築モードのクリック(0=壊す 2=置く)。手もふる
+function buildClick(button) { swingHand(); act(button); }
 // 1回だけ(クリックしたとき、長押しの最初)。送れたら、何をしたか返す
 function act(button) {
   if (!net.ready()) { hud.say("オフラインのときは、建築・破壊できません"); return null; }
@@ -346,20 +386,24 @@ function releaseBow() {
   if (power < 0.1) return;
   const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
   const pos = [eye[0] + L[0] * 0.5, eye[1] + L[1] * 0.5 - 0.1, eye[2] + L[2] * 0.5], vel = [L[0] * power * 3, L[1] * power * 3, L[2] * power * 3];
-  arrows.shoot(pos, vel);
+  arrows.shoot(pos, vel, true);
   if (net.ready()) net.sendShoot(pos, vel);
 }
 window.addEventListener("mouseup", (e) => { if (!isTouch && e.button === 2) releaseBow(); });
 window.addEventListener("blur", cancelCharge);
 function startCharge() { charge = { t0: performance.now() }; chargeEl.hidden = false; }
 window.addEventListener("mousedown", (e) => {
-  if (isTouch || !locked || panel || controls.p.glide) return;
-  if (e.button === 2 && hud.selectedItem() === "bow") { startCharge(); return; }
-  if (buildMode && isAdmin) {
-    if (e.button === 0 || e.button === 2) act(e.button);   // 1クリック=1回(長押しの連続はなし)
-    return;
+  if (isTouch || !locked || panel) return;
+  const it = hud.selectedItem(), glide = controls.p.glide;
+  if (e.button === 2) {   // 右クリック: 使う / ためる / 置く
+    if (it === "rocket") { useItem(); return; }
+    if (glide) return;
+    if (it === "bow") { startCharge(); return; }
+    if (buildMode && isAdmin) { buildClick(2); return; }
+    if (it === "book") useItem();
+  } else if (e.button === 0 && !glide) {   // 左クリック: 壊す(建築モード) / なぐる
+    if (buildMode && isAdmin) buildClick(0); else attack();
   }
-  if ((e.button === 0 || e.button === 2) && hud.selectedItem() === "book") setPanel("book");
 });
 window.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("wheel", (e) => {
@@ -398,11 +442,6 @@ window.addEventListener("keydown", (e) => {
 
 // ----- スマホの操作 -----
 let touch = null;
-function toggleBuild() {
-  if (!isAdmin) { hud.say("権限がありません(建築・破壊は管理者だけです)"); return; }
-  buildMode = !buildMode; hud.setBuildMode(buildMode); if (touch) touch.setBuild(buildMode);
-  hud.say(buildMode ? "建築破壊モード: タップ=置く / 長タップ=壊す" : "通常モード");
-}
 function tryFullscreen() {
   try {
     const el = document.documentElement, f = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -418,15 +457,12 @@ if (isTouch) {
     isBow: () => hud.selectedItem() === "bow",
     bowDown: () => startCharge(),
     bowUp: (cancel) => { if (cancel) cancelCharge(); else releaseBow(); },
-    tap: () => {
-      if (controls.p.glide) { controls.fireRocket(); return; }
-      if (buildMode && isAdmin) { act(2); return; }
-      if (hud.selectedItem() === "book") setPanel("book");
+    tap: () => { if (buildMode && isAdmin) buildClick(2); else attack(); },
+    longPress: () => { if (buildMode && isAdmin) buildClick(0); else useItem(); },
+    menu: () => { if (panel === "menu") setPanel(null); else if (!panel) setPanel("menu"); else setPanel(null); },
+    key: (code) => {   // 画面上のキーのボタン: 本物のキーを押したのと同じにする
+      for (const t of ["keydown", "keyup"]) window.dispatchEvent(new KeyboardEvent(t, { code, key: code }));
     },
-    longPress: () => { if (buildMode && isAdmin) act(0); },
-    menu: () => { if (panel === "menu") setPanel(null); else if (!panel) setPanel("menu"); },
-    build: toggleBuild,
-    plate: () => hud.say("プレートの置き方: " + build.cycleMode()),
     editStart: () => { setPanel(null); },
     editEnd: () => { hud.say("ボタン配置を保存しました"); },
   });
@@ -453,13 +489,14 @@ function frame(t) {
   const p = controls.p;
   me3d.root.visible = p.view !== 0;
   if (p.view !== 0) {
-    me3d.pose({ hs: controls.hs || 0, bodyYaw: p.bodyYaw, yaw: p.yaw, pitch: p.pitch, glide: p.glide, fly: p.fly, sneak: p.sneak, sprint: p.sprint, air: !p.ground, rocket: p.boost > 0 }, dt);
+    me3d.pose({ hs: controls.hs || 0, bodyYaw: p.bodyYaw, yaw: p.yaw, pitch: p.pitch, glide: p.glide, fly: p.fly, sneak: p.sneak, sprint: p.sprint, air: !p.ground, rocket: p.boost > 0, swing: controls.swingP }, dt);
     me3d.root.position.set(p.x, p.y, p.z);
   }
   if (charge && (panel || !locked || controls.p.glide || hud.selectedItem() !== "bow")) cancelCharge();
   const cf = chargeFrac();
   if (charge) { chargeEl.firstChild.style.width = (cf * 100) + "%"; chargeEl.classList.toggle("full", cf >= 1); }
-  firstPerson(dt, { held: hud.selectedItem() === "bow" && !panel, charge: cf });
+  firstPerson(dt, { held: hud.selectedItem() === "bow" && !panel, charge: cf, item: panel ? null : hud.selectedItem() });
+  if (hpNow < 20 && net.ready()) { regenT += dt; if (regenT >= 3) { regenT = 0; hpNow++; hud.setHealth(hpNow, false); } }
   arrows.setViewer(controls.p); arrows.update(dt);
   remotes.update(dt);
   if (world.dirty.size) rebuildDirty(8);
@@ -500,5 +537,5 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act }, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
+window.__craft = { arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });
