@@ -1,62 +1,85 @@
 // ブロックとプレートの世界(ブラウザ側)。保存・判定・光線・メッシュ作り。
-import { N, YMIN, YN, BLOCK, mod, defaultCell, SUN } from "./shared.js";
+import { N, YMIN, YN, BLOCK, mod, defaultCell } from "./shared.js";
 import { PLATES, T } from "./plates.js";
 
 const HW = 0.3;
 export const CH = 16;   // メッシュの区画の大きさ(横)
-// 面の向きによる明るさ(太陽がわ=白、反対がわ=すこしだけ暗い)
+// ---- マイクラ式の明るさ ----
+// 1. 面の向き: 上がいちばん明るく、横は少し暗く、下がいちばん暗い(ほかのブロックは関係ない)
 export function shade(n) {
-  const d = (n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]) / SUN[1];
-  return 0.84 + 0.16 * (Math.max(-1, Math.min(1, d)) * 0.5 + 0.5);
+  return n[0] * n[0] * 0.74 + n[2] * n[2] * 0.86 + (n[1] > 0 ? n[1] * n[1] * 1.0 : n[1] * n[1] * 0.62);
 }
-const SHADOW = 0.72;      // 影になった所の明るさ(かけ算)
-const SHADOW_LEN = 16;    // 影をさがす距離(太陽に向かって)
-
-// 点 o から太陽にむかう光が、ブロックやプレートにさえぎられるか(高速版: 配列を作らない)
-const SX = SUN[0], SY = SUN[1], SZ = SUN[2];
-const STX = SX > 0 ? 1 : -1, STY = SY > 0 ? 1 : -1, STZ = SZ > 0 ? 1 : -1;
-const DX = Math.abs(1 / SX), DY = Math.abs(1 / SY), DZ = Math.abs(1 / SZ);
-const _o = [0, 0, 0], _c = [0, 0, 0];
-function occluded(world, ox, oy, oz) {
-  let ix = Math.floor(ox + 0.5), iy = Math.floor(oy + 0.5), iz = Math.floor(oz + 0.5);
-  let tx = ((STX > 0 ? ix + 0.5 : ix - 0.5) - ox) / SX, ty = ((STY > 0 ? iy + 0.5 : iy - 0.5) - oy) / SY, tz = ((STZ > 0 ? iz + 0.5 : iz - 0.5) - oz) / SZ;
-  const cells = world.cells;
-  for (let first = true, n = 0; ; first = false) {
-    if (++n > 80) { if (n === 81) console.warn("occluded loop", ox, oy, oz, tx, ty, tz); return false; }
-    const v = cells[((((iy - YMIN) % YN) + YN) % YN * N + (((iz % N) + N) % N)) * N + (((ix % N) + N) % N)];
-    if (v) {
-      if (v & BLOCK) { if (!first) return true; }
-      else {
-        _o[0] = ox; _o[1] = oy; _o[2] = oz; _c[0] = ix; _c[1] = iy; _c[2] = iz;
-        for (let i = 0; i < 12; i++) if ((v & (1 << i)) && rayPlate(_o, SUN, _c, PLATES[i])) return true;
-      }
-    }
-    if (tx < ty) { if (tx < tz) { if (tx > SHADOW_LEN) return false; tx += DX; ix += STX; } else { if (tz > SHADOW_LEN) return false; tz += DZ; iz += STZ; } }
-    else if (ty < tz) { if (ty > SHADOW_LEN) return false; ty += DY; iy += STY; }
-    else { if (tz > SHADOW_LEN) return false; tz += DZ; iz += STZ; }
-  }
-}
+// 2. 空の光: 上にさえぎるものがなければ15。そこから横・下へ、1ブロックごとに1ずつ弱まりながら広がる
+// 3. ブロックの光: 光るもの(いまは無し)から、同じように広がる。 EMISSIVE[セルの値] = 明るさ(1〜15)
+export const EMISSIVE = new Map();
+const PLATE_COST = 4;   // プレートのあるセルを通ると、光はこれだけ余分に弱まる
+// 光のレベル(0〜15) → 明るさのかけ算。1段ごとに約0.9倍
+const LIGHT_F = Array.from({ length: 16 }, (_, l) => Math.pow(0.9, 15 - l));
+// 4. 角のかげ(AO): ブロックの角・くぼみの頂点を、すこし暗くする
+const AO_STEP = 0.17;
 
 export class World {
   constructor() {
     this.cells = new Uint16Array(N * YN * N);
     for (let y = YMIN; y < YMIN + YN; y++) for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) this.cells[this.idx(x, y, z)] = defaultCell(x, y, z);
     this.dirty = new Set();
+    this.lightDirty = true;
+    this.light = null;
   }
   idx(x, y, z) { return (mod(y - YMIN, YN) * N + mod(z, N)) * N + mod(x, N); }
   get(x, y, z) { return this.cells[this.idx(x, y, z)]; }
   set(x, y, z, v) {
     this.cells[this.idx(x, y, z)] = v;
-    const cx = mod(x, N) >> 4, cz = mod(z, N) >> 4, nc = N / CH;
-    this.dirty.add(cx * nc + cz);
-    const lx = mod(x, N) & 15, lz = mod(z, N) & 15;   // 区画のはしなら、となりも作り直す
-    if (lx === 0) this.dirty.add(mod(cx - 1, nc) * nc + cz);
-    if (lx === CH - 1) this.dirty.add(mod(cx + 1, nc) * nc + cz);
-    if (lz === 0) this.dirty.add(cx * nc + mod(cz - 1, nc));
-    if (lz === CH - 1) this.dirty.add(cx * nc + mod(cz + 1, nc));
-    // 影は、東(+x)とすこし北(-z)にのびる
-    this.dirty.add(mod(cx + 1, nc) * nc + cz); this.dirty.add(cx * nc + mod(cz - 1, nc)); this.dirty.add(mod(cx + 1, nc) * nc + mod(cz - 1, nc));
+    // 光は遠くまで広がるので、変更があったら、明るさを計算しなおして、全部の区画を作りなおす
+    this.lightDirty = true;
+    const nc = N / CH;
+    for (let i = 0; i < nc * nc; i++) this.dirty.add(i);
   }
+
+  // 光の計算(空の光 + ブロックの光)。light[idx] = 0〜15
+  relight() {
+    this.lightDirty = false;
+    const cells = this.cells, light = this.light || (this.light = new Uint8Array(cells.length));
+    light.fill(0);
+    const buckets = Array.from({ length: 16 }, () => []);
+    const cost = (v) => (v & BLOCK ? -1 : v ? 1 + PLATE_COST : 1);   // 広がるときの弱まり方(-1=通れない)
+    // 空の光: 上から下へ。ブロックでさえぎられたら0、プレートを通ると弱まる
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      let lv = 15;
+      for (let y = YMIN + YN - 1; y >= YMIN; y--) {
+        const i = this.idx(x, y, z), v = cells[i];
+        if (v & BLOCK) lv = 0;
+        else if (v) lv = Math.max(0, lv - PLATE_COST);
+        light[i] = lv;
+      }
+    }
+    for (let i = 0; i < cells.length; i++) {
+      const e = EMISSIVE.size ? EMISSIVE.get(cells[i]) : 0;
+      if (e && e > light[i]) light[i] = e;
+      if (light[i] > 0) buckets[light[i]].push(i);
+    }
+    // 広がり
+    const NN = N * N;
+    for (let lv = 15; lv >= 2; lv--) {
+      const b = buckets[lv];
+      for (let k = 0; k < b.length; k++) {
+        const i = b[k];
+        if (light[i] !== lv) continue;
+        const xi = i % N, zi = ((i / N) | 0) % N, yi = (i / NN) | 0;
+        for (let d = 0; d < 6; d++) {
+          let nx = xi, nz = zi, ny = yi;
+          if (d === 0) nx = xi === N - 1 ? 0 : xi + 1; else if (d === 1) nx = xi === 0 ? N - 1 : xi - 1;
+          else if (d === 2) nz = zi === N - 1 ? 0 : zi + 1; else if (d === 3) nz = zi === 0 ? N - 1 : zi - 1;
+          else if (d === 4) ny = yi === YN - 1 ? 0 : yi + 1; else ny = yi === 0 ? YN - 1 : yi - 1;
+          const j = (ny * N + nz) * N + nx, c = cost(cells[j]);
+          if (c < 0) continue;
+          const nl = lv - c;
+          if (nl > light[j]) { light[j] = nl; if (nl > 1) buckets[nl].push(j); }
+        }
+      }
+    }
+  }
+  lightAt(x, y, z) { return this.light[this.idx(x, y, z)]; }
 
   // 体(横の半幅 HW、高さ h)が、ブロックやプレートに重なっているか。重なった箱 [x0,y0,z0,x1,y1,z1] を返す
   hits(x, y, z, h) {
@@ -147,63 +170,60 @@ const FACES = [
   { n: [0, 0, -1], v: [[-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5], [0.5, -0.5, -0.5]] },
 ];
 
-const SUB = 4;   // 1まいの面を 4×4 に分けて、小さなマスごとに影を決める
 export function buildChunk(world, cx, cz) {
+  if (world.lightDirty || !world.light) world.relight();
   const pos = [], col = [], idx = [];
-  // 四角形 p0..p3(つながった順)を分けて、マスごとに 明るさ × 影 をつける。sn=太陽にむいた法線、s=向きの明るさ
-  const quad = (p, sn, s) => {
-    const facing = sn[0] * SUN[0] + sn[1] * SUN[1] + sn[2] * SUN[2] > 0.02;
-    const P = [0, 0, 0];
-    const at = (u, v) => {
-      const a = (1 - u) * (1 - v), b = u * (1 - v), c = u * v, d = (1 - u) * v;
-      P[0] = p[0][0] * a + p[1][0] * b + p[2][0] * c + p[3][0] * d; P[1] = p[0][1] * a + p[1][1] * b + p[2][1] * c + p[3][1] * d; P[2] = p[0][2] * a + p[1][2] * b + p[2][2] * c + p[3][2] * d;
-      return P;
-    };
-    // マスの中の5か所で、光がさえぎられるかを見て、割合でやわらかく暗くする
-    const offs = [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]];
-    const cs = [];
-    let lo = 9, hi = -9;
-    for (let j = 0; j < SUB; j++) for (let i = 0; i < SUB; i++) {
-      let c = s;
-      if (facing) {
-        let hit = 0;
-        for (const [a, b] of offs) {
-          const P = at((i + a) / SUB, (j + b) / SUB);
-          if (occluded(world, P[0] + sn[0] * 0.045, P[1] + sn[1] * 0.045, P[2] + sn[2] * 0.045)) hit++;
-        }
-        c = s * (1 - (1 - SHADOW) * (hit / offs.length));
-      }
-      cs.push(c); if (c < lo) lo = c; if (c > hi) hi = c;
+  const opq = (x, y, z) => { const v = world.get(x, y, z); return v & BLOCK ? 1 : v ? 0.5 : 0; };
+  // プレートの面の明るさ: そのセルの光と、まわりの空いたセルの光(−1)の大きいほう(プレート自身のせいで暗くならないように)
+  const plateLight = (x, y, z) => {
+    let m = world.lightAt(x, y, z);
+    for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+      if (world.get(x + dx, y + dy, z + dz) & BLOCK) continue;
+      const l = world.lightAt(x + dx, y + dy, z + dz) - 1;
+      if (l > m) m = l;
     }
-    const emit = (u0, v0, u1, v1, c) => {
-      const base = pos.length / 3;
-      for (const [u, v] of [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]) { const P = at(u, v); pos.push(P[0], P[1], P[2]); col.push(c, c, c); }
-      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    };
-    if (hi - lo < 0.004) { emit(0, 0, 1, 1, cs[0]); return; }   // 影がなければ1まい(三角形をふやさない)
-    for (let j = 0; j < SUB; j++) for (let i = 0; i < SUB; i++) emit(i / SUB, j / SUB, (i + 1) / SUB, (j + 1) / SUB, cs[j * SUB + i]);
+    return Math.max(0, m);
   };
   for (let x = cx * CH; x < cx * CH + CH; x++) for (let z = cz * CH; z < cz * CH + CH; z++) for (let y = YMIN; y < YMIN + YN; y++) {
     const v = world.get(x, y, z);
     if (!v) continue;
     if (v & BLOCK) {
       for (const f of FACES) {
-        if (world.get(x + f.n[0], y + f.n[1], z + f.n[2]) & BLOCK) continue;
-        quad(f.v.map((q) => [x + q[0], y + q[1], z + q[2]]), f.n, shade(f.n));
+        const fx = x + f.n[0], fy = y + f.n[1], fz = z + f.n[2];
+        if (world.get(fx, fy, fz) & BLOCK) continue;
+        const s = shade(f.n), L0 = world.lightAt(fx, fy, fz), base = pos.length / 3, cc = [];
+        const ax = f.n[0] ? 0 : f.n[1] ? 1 : 2, t1 = (ax + 1) % 3, t2 = (ax + 2) % 3;
+        const frontOcc = Math.min(1, opq(fx, fy, fz));   // 面の前のセルにプレートがあれば、その下(=この面)は暗い
+        for (const q of f.v) {
+          const s1 = q[t1] > 0 ? 1 : -1, s2 = q[t2] > 0 ? 1 : -1;
+          const P1 = [fx, fy, fz], P2 = [fx, fy, fz], PC = [fx, fy, fz];
+          P1[t1] += s1; P2[t2] += s2; PC[t1] += s1; PC[t2] += s2;
+          const o1 = opq(P1[0], P1[1], P1[2]), o2 = opq(P2[0], P2[1], P2[2]);
+          const oc = o1 >= 1 && o2 >= 1 ? 1 : opq(PC[0], PC[1], PC[2]);
+          const l1 = o1 >= 1 ? L0 : world.lightAt(P1[0], P1[1], P1[2]), l2 = o2 >= 1 ? L0 : world.lightAt(P2[0], P2[1], P2[2]);
+          const lc = o1 >= 1 && o2 >= 1 ? L0 : opq(PC[0], PC[1], PC[2]) >= 1 ? L0 : world.lightAt(PC[0], PC[1], PC[2]);
+          const light = (L0 + l1 + l2 + lc) / 4;
+          const lo = Math.floor(light), fr = light - lo, fac = LIGHT_F[lo] * (1 - fr) + LIGHT_F[Math.min(15, lo + 1)] * fr;
+          const ao = 1 - AO_STEP * (Math.min(1, o1) + Math.min(1, o2) + Math.min(1, oc) + frontOcc * 0.5);
+          const c = s * fac * Math.max(0.35, ao);
+          pos.push(x + q[0], y + q[1], z + q[2]); col.push(c, c, c); cc.push(c);
+        }
+        if (cc[0] + cc[2] < cc[1] + cc[3]) idx.push(base + 1, base + 2, base + 3, base + 1, base + 3, base);   // 暗さのつながりがなめらかな対角線で割る
+        else idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
       }
     } else {
       for (let i = 0; i < 12; i++) {
         if (!(v & (1 << i))) continue;
-        // プレートは厚みのない1まいの面。太陽がわの向きで明るさと影を決める(裏も同じ)
+        // プレートは厚みのない1まいの面。両面とも、明るいほうの向き + そのセルの光
         const pl = PLATES[i], h = pl.half;
         const kt = h[0] < 0.1 ? 0 : h[1] < 0.1 ? 1 : 2;
         const B = pl.axes[(kt + 1) % 3], C = pl.axes[(kt + 2) % 3], hb = h[(kt + 1) % 3], hc = h[(kt + 2) % 3];
         const k = pl.diag ? 1 : (0.5 - 0.004) / (0.5 - T / 2);
         const ctr = [x + pl.c[0] * k, y + pl.c[1] * k, z + pl.c[2] * k];
         const corner = (sb, sc) => [ctr[0] + B[0] * hb * sb + C[0] * hc * sc, ctr[1] + B[1] * hb * sb + C[1] * hc * sc, ctr[2] + B[2] * hb * sb + C[2] * hc * sc];
-        const toSun = pl.n[0] * SUN[0] + pl.n[1] * SUN[1] + pl.n[2] * SUN[2] >= 0;
-        const sn = toSun ? pl.n : pl.n.map((q) => -q);
-        quad([corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], sn, Math.max(shade(pl.n), shade(pl.n.map((q) => -q))));
+        const c = Math.max(shade(pl.n), shade(pl.n.map((q) => -q))) * LIGHT_F[plateLight(x, y, z)], base = pos.length / 3;
+        for (const q of [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)]) { pos.push(q[0], q[1], q[2]); col.push(c, c, c); }
+        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
       }
     }
   }
