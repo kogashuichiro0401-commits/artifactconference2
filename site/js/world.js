@@ -1,6 +1,6 @@
 // ブロックとプレートの世界(ブラウザ側)。保存・判定・光線・メッシュ作り。
 import { N, YMIN, YN, BLOCK, mod, defaultCell } from "./shared.js";
-import { PLATES } from "./plates.js";
+import { PLATES, T } from "./plates.js";
 
 const HW = 0.3;
 export const CH = 16;   // メッシュの区画の大きさ(横)
@@ -8,7 +8,7 @@ const LIGHT = (() => { const l = [0.4, 0.8, 0.3], m = Math.hypot(...l); return l
 // 面の向きによる明るさ(上=1、横=0.75〜0.8、下=0.6)
 export function shade(n) {
   const d = n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2];
-  return 0.6 + 0.4 * Math.min(1, Math.max(0, d) / LIGHT[1]);
+  return 0.85 + 0.15 * Math.min(1, Math.max(0, d) / LIGHT[1]);
 }
 
 export class World {
@@ -137,19 +137,14 @@ export function buildChunk(world, cx, cz) {
     } else {
       for (let i = 0; i < 12; i++) {
         if (!(v & (1 << i))) continue;
-        const pl = PLATES[i], [A0, A1, A2] = pl.axes, h = pl.half;
-        for (let k = 0; k < 3; k++) for (const sg of [1, -1]) {
-          const A = pl.axes[k], B = pl.axes[(k + 1) % 3], C = pl.axes[(k + 2) % 3], hb = h[(k + 1) % 3], hc = h[(k + 2) % 3];
-          const nrm = [A[0] * sg, A[1] * sg, A[2] * sg];
-          const ctr = [x + pl.c[0] + nrm[0] * h[k], y + pl.c[1] + nrm[1] * h[k], z + pl.c[2] + nrm[2] * h[k]];
-          const corner = (sb, sc) => [ctr[0] + B[0] * hb * sb + C[0] * hc * sc, ctr[1] + B[1] * hb * sb + C[1] * hc * sc, ctr[2] + B[2] * hb * sb + C[2] * hc * sc];
-          const q = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
-          // 向きをそろえる(外向きが表)
-          const e1 = [q[1][0] - q[0][0], q[1][1] - q[0][1], q[1][2] - q[0][2]], e2 = [q[2][0] - q[1][0], q[2][1] - q[1][1], q[2][2] - q[1][2]];
-          const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
-          if (cr[0] * nrm[0] + cr[1] * nrm[1] + cr[2] * nrm[2] < 0) q.reverse();
-          quad(q, shade(nrm));
-        }
+        // プレートは厚みのない1まいの面。両面とも同じ明るさ(明るいほうの向き)
+        const pl = PLATES[i], h = pl.half;
+        const kt = h[0] < 0.1 ? 0 : h[1] < 0.1 ? 1 : 2;
+        const B = pl.axes[(kt + 1) % 3], C = pl.axes[(kt + 2) % 3], hb = h[(kt + 1) % 3], hc = h[(kt + 2) % 3];
+        const k = pl.diag ? 1 : (0.5 - 0.004) / (0.5 - T / 2);
+        const ctr = [x + pl.c[0] * k, y + pl.c[1] * k, z + pl.c[2] * k];
+        const corner = (sb, sc) => [ctr[0] + B[0] * hb * sb + C[0] * hc * sc, ctr[1] + B[1] * hb * sb + C[1] * hc * sc, ctr[2] + B[2] * hb * sb + C[2] * hc * sc];
+        quad([corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)], Math.max(shade(pl.n), shade([-pl.n[0], -pl.n[1], -pl.n[2]])));
       }
     }
   }

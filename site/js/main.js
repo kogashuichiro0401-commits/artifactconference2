@@ -32,6 +32,13 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
 scene.fog = new THREE.Fog(SKY, 70, 190);
+// 世界(64x64x64)のはしを、青い枠で示す
+{
+  const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(N, YN, N));
+  const fr = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1f6bff, fog: false }));
+  fr.position.set(N / 2 - 0.5, YMIN + YN / 2 - 0.5, N / 2 - 0.5);
+  scene.add(fr);
+}
 const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.05, 400);
 camera.rotation.order = "YXZ";
 
@@ -116,7 +123,7 @@ hud = createHud({
   onLogout: async () => {
     await logout();
     net.stop(); netStarted = false; remotes.clear();
-    user = null; isAdmin = false; buildMode = false; hud.setAdmin(false); hud.setBuildMode(false);
+    user = null; isAdmin = false; controls.canFly = false; buildMode = false; hud.setAdmin(false); hud.setBuildMode(false);
     netState = "idle"; refreshOnline();
     setPanel("login");
   },
@@ -124,7 +131,7 @@ hud = createHud({
 
 function signedIn(u) {
   user = u;
-  isAdmin = u.role === "admin"; buildMode = false;
+  isAdmin = u.role === "admin"; buildMode = false; controls.canFly = isAdmin;
   hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(false);
   setPanel("menu");
 }
@@ -159,7 +166,7 @@ const net = new Net({
     everConnected = true;
     netState = "open";
     myName = m.name || "";
-    isAdmin = !!m.admin;
+    isAdmin = !!m.admin; controls.canFly = isAdmin;
     if (!isAdmin) { buildMode = false; hud.setBuildMode(false); }
     hud.setAdmin(isAdmin);
     for (const e of m.edits || []) world.set(e[0], e[1], e[2], e[3]);   // みんなが作った建築を反映

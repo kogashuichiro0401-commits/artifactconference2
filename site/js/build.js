@@ -39,7 +39,7 @@ export class BuildTool {
     const tg = this.target;
     if (tg) {
       if (tg.kind === "block") this.setBoxMatrix(this.outline, tg.cell, [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0.5, 0.5, 0.5], 0.006);
-      else { const p = PLATES[tg.plate]; this.setBoxMatrix(this.outline, [tg.cell[0] + p.c[0], tg.cell[1] + p.c[1], tg.cell[2] + p.c[2]], p.axes, p.half, 0.006); }
+      else { const p = PLATES[tg.plate]; this.setBoxMatrix(this.outline, [tg.cell[0] + p.c[0], tg.cell[1] + p.c[1], tg.cell[2] + p.c[2]], p.axes, p.half.map((q) => (q < 0.1 ? 0 : q)), 0.006); }
       this.outline.visible = true;
     } else this.outline.visible = false;
     // 置いた場合
@@ -63,7 +63,7 @@ export class BuildTool {
       this.place = { x: c[0], y: c[1], z: c[2], kind: "plate", i };
       const p = PLATES[i], ctr = [c[0] + p.c[0], c[1] + p.c[1], c[2] + p.c[2]];
       this.setBoxMatrix(this.ghost, ctr, p.axes, p.half, 0);
-      this.setBoxMatrix(this.ghostLine, ctr, p.axes, p.half, 0.006);
+      this.setBoxMatrix(this.ghostLine, ctr, p.axes, p.half.map((q) => (q < 0.1 ? 0 : q)), 0.006);
     }
     this.ghost.visible = this.ghostLine.visible = true;
   }

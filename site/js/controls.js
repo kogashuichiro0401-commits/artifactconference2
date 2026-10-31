@@ -13,6 +13,7 @@ export class Controls {
     this.world = world;
     this.spawn = spawn;
     this.say = say || (() => {});
+    this.canFly = false;   // 空中浮遊は管理者だけ
     this.cfg = { ely: true, rks: true, rkt: 2, rka: 30 };   // エリトラ / ロケット(あり・時間・加速度)
     this.keys = {};
     this.locked = false;
@@ -76,7 +77,8 @@ export class Controls {
       if (code === "KeyW") { if (now - this.lastW < 300) { p.sprint = !p.sneak; this.sprintKey = "KeyW"; } this.lastW = now; }
       if (code === "KeyS") { if (now - this.lastS < 300) { p.sprint = !p.sneak; this.sprintKey = "KeyS"; } this.lastS = now; }
       if (code === "Space") {
-        if (now - this.lastSp < 300) { p.fly = !p.fly; p.vy = 0; this.lastSp = -1000; p.glide = false; p.boost = 0; if (p.fly) p.sneak = false; }
+        if (now - this.lastSp < 300 && !this.canFly) { this.lastSp = -1000; this.say("飛行できるのは管理者だけです"); }
+        else if (now - this.lastSp < 300) { p.fly = !p.fly; p.vy = 0; this.lastSp = -1000; p.glide = false; p.boost = 0; if (p.fly) p.sneak = false; }
         else {
           this.lastSp = now;
           if (p.glide) { p.glide = false; p.boost = 0; this.say("滑空を終えました(自由落下)"); }
@@ -121,6 +123,21 @@ export class Controls {
     p.vx = v[0]; p.vy = v[1]; p.vz = v[2];
   }
 
+  // 横にぶつかったとき、0.6より低い段差(45度の斜面など)なら、のぼる
+  stepUp(nx, nz, h) {
+    const p = this.p;
+    if (!p.ground || p.fly) return false;
+    let yy = p.y;
+    for (let k = 0; k < 4; k++) {
+      const b = this.hits(nx, yy, nz, h);
+      if (!b) break;
+      yy = b[4] + 1e-4;
+    }
+    if (yy - p.y > 0.6 || this.hits(nx, yy, nz, h)) return false;
+    p.x = nx; p.z = nz; p.y = yy;
+    return true;
+  }
+
   update(dt) {
     const p = this.p, keys = this.keys;
     if (this.rocketT < 1) this.rocketT = Math.min(1, this.rocketT + dt / 0.4);
@@ -148,9 +165,10 @@ export class Controls {
     }
     if (gv) this.glideTick(dt, gv);
     const h = this.curH(), nx = p.x + p.vx * dt;
-    if (!this.hits(nx, p.y, p.z, h)) p.x = nx; else p.vx = 0;
+    if (!this.canFly && p.fly) p.fly = false;
+    if (!this.hits(nx, p.y, p.z, h)) p.x = nx; else if (!this.stepUp(nx, p.z, h)) p.vx = 0;
     const nz = p.z + p.vz * dt;
-    if (!this.hits(p.x, p.y, nz, h)) p.z = nz; else p.vz = 0;
+    if (!this.hits(p.x, p.y, nz, h)) p.z = nz; else if (!this.stepUp(p.x, nz, h)) p.vz = 0;
     let ny = p.y + p.vy * dt;
     p.ground = false;
     const b = this.hits(p.x, ny, p.z, h);
