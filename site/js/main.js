@@ -55,7 +55,7 @@ scene.add(sun, sun.target);
 
 // ----- 世界: ブロックとプレート。横・縦ともにループするので、まわりに27個のコピーを並べて、切れ目なく見せる -----
 const world = new World();
-world.spawn = { x: N / 2, y: 0.5, z: N / 2, yaw: 0, pitch: 0 };
+world.spawn = { x: N / 2, y: 1.5, z: N / 2, yaw: 0, pitch: 0 };
 const worldMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
 const NC = N / CH;
 const offsets = [];

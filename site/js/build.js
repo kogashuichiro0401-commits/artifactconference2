@@ -45,9 +45,17 @@ export class BuildTool {
     // 置いた場合
     this.ghost.visible = this.ghostLine.visible = false;
     if (!buildOn || (held !== "block" && held !== "plate")) return;
-    const sup = w.raycast(eye, dir, REACH, true);   // ささえになるブロック
+    // ささえ: プレートを置くときはブロックだけ。ブロックを置くときは、プレートも「さわれるもの」として扱う
+    const sup = w.raycast(eye, dir, REACH, held === "plate");
     if (!sup) return;
-    const c = [sup.cell[0] + sup.face[0], sup.cell[1] + sup.face[1], sup.cell[2] + sup.face[2]];
+    let face = sup.face;
+    if (sup.kind === "plate") {   // 板の手前がわ(見ている側)のセルに置く。斜めの板は、上下を優先
+      const n = PLATES[sup.plate].n, sg = n[0] * dir[0] + n[1] * dir[1] + n[2] * dir[2] > 0 ? -1 : 1;
+      const m = n.map((q) => Math.abs(q));
+      const ax = m[1] >= m[0] - 1e-6 && m[1] >= m[2] - 1e-6 ? 1 : m[0] >= m[2] ? 0 : 2;
+      face = [0, 0, 0]; face[ax] = Math.sign(n[ax] * sg) || 1;
+    }
+    const c = [sup.cell[0] + face[0], sup.cell[1] + face[1], sup.cell[2] + face[2]];
     if (!inRangeY(c[1])) return;
     const cur = w.get(c[0], c[1], c[2]);
     if (cur & BLOCK) return;

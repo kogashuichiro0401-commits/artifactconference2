@@ -19,7 +19,7 @@ function cleanName(s) {
 function pose(m, base) {
   return {
     x: r2(num(m.x, -1, N, base?.x ?? N / 2)),
-    y: r2(num(m.y, YMIN - 1, YMIN + YN + 1, base?.y ?? 0.5)),
+    y: r2(num(m.y, YMIN - 1, YMIN + YN + 1, base?.y ?? 1.5)),
     z: r2(num(m.z, -1, N, base?.z ?? N / 2)),
     yaw: r2(num(m.yaw, -1000, 1000, base?.yaw ?? 0)),
     pitch: r2(num(m.pitch, -1.6, 1.6, base?.pitch ?? 0)),
@@ -42,7 +42,11 @@ export class Room {
     this.edits = new Map();   // "x,y,z" → セルの値
     ctx.blockConcurrencyWhile(async () => {
       const all = await ctx.storage.list({ prefix: "e:" });
-      for (const [k, v] of all) this.edits.set(k.slice(2), v);
+      for (const [k, v] of all) {
+        const [ex, ey, ez] = k.slice(2).split(",").map(Number);
+        if (!inRangeY(ey) || ex < 0 || ex >= N || ez < 0 || ez >= N) { ctx.storage.delete(k); continue; }   // 世界の範囲が変わる前の古い建築は捨てる
+        this.edits.set(k.slice(2), v);
+      }
     });
   }
 
