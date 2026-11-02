@@ -44,7 +44,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
   inv[1] = "book";
   inv[4] = "rocket";
   const setItems = (admin) => { inv[2] = admin ? "block" : null; inv[3] = admin ? "plate" : null; };
-  let sel = 0, hp = 20, nameTimer = 0, entered = false, updateVer = null, user = null, sayTimer = 0;
+  let loading = false, sel = 0, hp = 20, nameTimer = 0, entered = false, updateVer = null, user = null, sayTimer = 0;
 
   // ----- ハート(体力は0〜20。1つのハートが2) -----
   const heartEls = [];
@@ -167,7 +167,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       ${brand("v" + VERSION, true)}
       ${notice}
       <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}<span class="role">${user && user.role === "admin" ? "管理者" : "泳者"}</span></span><button class="pill" id="btn-logout">ログアウト</button></div>
-      <button class="pill primary block" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
+      <button class="pill primary block" id="btn-enter"${loading ? " disabled" : ""}>${loading ? "ワールドを読み込み中…" : entered ? "世界にもどる" : "世界に入る"}</button>
       <button class="pill block" id="btn-respawn">スタート地点にもどる (R)</button>
       <h2>設定</h2>
       ${setRow("fov", "視野角", 50, 110, 1, settings.fov, "")}
@@ -179,7 +179,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     $("btn-log").onclick = () => { const b = $("logbox"); b.hidden = !b.hidden; if (!b.hidden) b.scrollIntoView({ block: "nearest" }); };
     $("btn-enter").onclick = () => { entered = true; onEnter(); };
     $("btn-logout").onclick = () => onLogout();
-    $("btn-respawn").onclick = () => { onRespawn(); onEnter(); };
+    $("btn-respawn").onclick = () => { if (loading) return; onRespawn(); onEnter(); };
     // 設定は、スライダー(ドラッグ)でも、数字の入力でも変えられる
     const bind = (key, min, max, step) => {
       const r = $("set-" + key), n = $("setn-" + key);
@@ -229,6 +229,12 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       while (feed.children.length > 4) feed.firstChild.remove();
       setTimeout(() => el.classList.add("out"), 3000);
       setTimeout(() => el.remove(), 3600);
+    },
+    // ワールド(ブロック)を読み込むあいだは、入れない
+    setLoading: (on) => {
+      loading = on;
+      const b = $("btn-enter");
+      if (b) { b.disabled = on; b.textContent = on ? "ワールドを読み込み中…" : entered ? "世界にもどる" : "世界に入る"; }
     },
     setPose: () => {},
     setResume: (on) => { $("resume").hidden = !on; },

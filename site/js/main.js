@@ -208,7 +208,7 @@ hud = createHud({
   onLogout: async () => {
     await logout();
     net.stop(); netStarted = false; remotes.clear();
-    saveState(); stateUid = "";
+    saveState(); stateUid = ""; worldReady = false; welcomed = false;
     user = null; isAdmin = false; controls.canFly = false; if (touch) { touch.setAdmin(false); touch.setBuild(false); } buildMode = false; hud.setAdmin(false); hud.setBuildMode(false);
     netState = "idle"; refreshOnline();
     setPanel("login");
@@ -255,6 +255,7 @@ function signedIn(u) {
   isAdmin = u.role === "admin"; buildMode = isAdmin && uiPrefs.f4; controls.canFly = isAdmin; if (touch) { touch.setAdmin(isAdmin); touch.setBuild(buildMode); }
   hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(buildMode);
   restoreState(u);
+  startLoading(); ensureOnline();   // ログインしたらすぐ、世界を読み込みはじめる
   setPanel("menu");
 }
 
@@ -328,7 +329,7 @@ const net = new Net({
     remotes.clear();
     for (const p of m.players) remotes.add(p);
     if (m.version !== VERSION) updateFound(m.version);   // 古い画面のまま遊んでいる
-    forceSend = true;
+    forceSend = true; welcomed = true;
     hpNow = 20; hud.setHealth(20, false);
     refreshOnline();
   },
@@ -356,6 +357,17 @@ const net = new Net({
   onKicked: () => { netState = "closed"; netStarted = false; remotes.clear(); refreshOnline(); hud.say("ほかの画面で入ったため、こちらは切断されました"); },
 });
 
+// ワールドの読み込み: サーバーから建築を受けとり、ブロックの見た目を作り終えるまで、世界に入れない
+let worldReady = false, welcomed = false, loadStart = 0;
+function startLoading() {
+  worldReady = false; welcomed = false; loadStart = performance.now();
+  hud.setLoading(true);
+}
+function checkLoaded() {
+  if (worldReady || !user) return;
+  const give = netState === "full" || performance.now() - loadStart > 12000;   // つながらないときは、ひとりで遊べるように
+  if ((welcomed && !world.dirty.size) || give) { worldReady = true; hud.setLoading(false); }
+}
 function ensureOnline() {
   if (!netStarted && user) { netStarted = true; net.start(); }
 }
@@ -386,6 +398,7 @@ function exitLock() {
 }
 function setPanel(name) {
   if (!user && name !== "login") name = "login";   // ログインしていない人は、世界に入れない
+  if (user && !worldReady && !name) { name = "menu"; hud.say("ワールドを読み込み中です。少し待ってください"); }   // ブロックを読み込むまでは、操作できない
   panel = name;
   hud.show(name);
   if (touch) touch.setMenu(name === "menu");
@@ -672,7 +685,8 @@ const map3d = createMinimap(THREE, document.getElementById("minimap"));
 function frame(t) {
   const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
-  controls.update(dt);
+  checkLoaded();
+  if (!user || worldReady) controls.update(dt);   // 読み込みのあいだは、体も動かさない
   controls.camera(camera, dt);
   skyDome.position.copy(camera.position);
   sunSprite.position.set(camera.position.x + SUN[0] * 270, camera.position.y + SUN[1] * 270, camera.position.z + SUN[2] * 270);
@@ -714,7 +728,7 @@ function frame(t) {
     const look = tg ? (tg.kind === "block" ? `ブロック ${wrapCell(tg.cell).join(" ")}` : `プレート ${PLATE_NAMES[tg.plate]} @ ${wrapCell(tg.cell).join(" ")}`) : "なし";
     hud.setDebug([
       `artifact学会。 3D v${VERSION}   ${fps.toFixed(0)} fps`,
-      `XYZ: ${p.x.toFixed(3)} / ${p.y.toFixed(3)} / ${p.z.toFixed(3)}`,
+      `XYZ: ${p.x.toFixed(3)} / ${(p.y + 0.5).toFixed(3)} / ${p.z.toFixed(3)}   (Yは足があるブロックの高さ。ブロックの上では整数)`,
       `ブロック: ${mod(Math.round(p.x), N)} ${Math.floor(p.y + 0.5 + 1e-6)} ${mod(Math.round(p.z), N)}   (世界 ${N}x${YN}x${N}、ループ)`,
       `向き: ${face}  (yaw ${yawDeg.toFixed(1)} / pitch ${((-p.pitch * 180) / Math.PI).toFixed(1)})`,
       `見ている先: ${look}`,
