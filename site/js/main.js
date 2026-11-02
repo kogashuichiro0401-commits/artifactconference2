@@ -444,12 +444,22 @@ function logCmd(text) {                                                  // 自�
 }
 
 let cmdOpen = false, cmdMode = "cmd";   // "cmd": / から始まるコマンド(英語だけ)  "chat": チャット
-const cmdBar = document.getElementById("cmdbar"), cmdIn = document.getElementById("cmd");
+const cmdBar = document.getElementById("cmdbar"), cmdIn = document.getElementById("cmd"), cmdShow = document.getElementById("cmdshow");
+// type=password の欄は、文字が●で表示されるので、本物の文字は、うえに重ねた表示(cmdShow)で見せる
+function updateShow() {
+  if (cmdMode !== "cmd") return;
+  const v = cmdIn.value, i = Math.min(v.length, cmdIn.selectionStart == null ? v.length : cmdIn.selectionStart);
+  document.getElementById("cs-a").textContent = v.slice(0, i);
+  document.getElementById("cs-b").textContent = v.slice(i);
+}
+for (const ev of ["input", "keyup", "click", "select"]) cmdIn.addEventListener(ev, updateShow);
+document.addEventListener("selectionchange", () => { if (document.activeElement === cmdIn) updateShow(); });
 function setMode(mode) {
   cmdMode = mode;
   // コマンドは、type=password にして、日本語入力(IME)を自動で切って英数入力にする(文字は見えるまま)
   cmdIn.type = mode === "cmd" ? "password" : "text";
   cmdIn.classList.toggle("plain", mode === "cmd");
+  cmdShow.hidden = mode !== "cmd";
   cmdIn.placeholder = mode === "chat" ? "チャット (Enterで送る / Escでやめる)" : "";
 }
 function openCmd(mode) {
@@ -459,6 +469,7 @@ function openCmd(mode) {
   cmdBar.hidden = false; histEl.hidden = false; renderHist();
   cmdIn.value = mode === "cmd" ? "/" : ""; cmdIn.focus();
   cmdIn.setSelectionRange(cmdIn.value.length, cmdIn.value.length);
+  updateShow();
 }
 function closeCmd() {
   if (!cmdOpen) return;

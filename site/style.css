@@ -182,5 +182,9 @@ body.touch .panel{touch-action:pan-y}
 .cl b{color:#9fc2ff}.cl.cmd{color:#d8e8ff;font-family:ui-monospace,Consolas,monospace;font-size:12px}.cl.sys{color:#ffe9a8}
 #chathist{position:fixed;left:8px;bottom:48px;width:min(460px,92vw);max-height:38vh;overflow-y:auto;z-index:20;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,.5);color:#fff;font-size:13px;line-height:1.55;display:flex;flex-direction:column;gap:1px;user-select:text;-webkit-user-select:text}
 .hl{word-break:break-all}.hl b{color:#9fc2ff}.hl.cmd{color:#cfe3ff;font-family:ui-monospace,Consolas,monospace;font-size:12px}
-#cmd.plain{-webkit-text-security:none;text-security:none}
+#cmdbar{position:fixed}
+#cmd.plain{color:transparent;caret-color:transparent;background:rgba(0,0,0,.6)}
+#cmdshow{position:absolute;left:11px;top:1px;height:32px;line-height:32px;font:14px ui-monospace,Consolas,monospace;color:#fff;white-space:pre;pointer-events:none;z-index:1}
+#cmdshow i{display:inline-block;width:1px;height:17px;margin:0 -0.5px;background:#fff;vertical-align:middle;animation:cblink 1s steps(2,start) infinite}
+@keyframes cblink{50%{opacity:0}}
 body.touch #chatlog .cl{font-size:11px}
