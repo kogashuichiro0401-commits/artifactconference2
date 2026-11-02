@@ -26,6 +26,7 @@ export class Controls {
     this.kick = 0;
     this.rocketT = 1;              // ロケットを打ったあとの手の動き
     this.swingP = 0;               // 手をふる動き(0=していない、0〜1で進む)
+    this.stepSmooth = 0;           // 段差・坂をのぼりおりしたぶんの、見た目のずれ(なめらかに0にもどす)
     this.kbT = 0;                  // ノックバックで、ふき飛ばされている残り時間
     this.p = { zm: 1, zt: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, ground: false, glide: false, boost: 0, fly: false, sprint: false, sneak: false, view: 0, fov: 70, bodyYaw: 0, t: 0 };
     this.respawn();
@@ -40,6 +41,7 @@ export class Controls {
     Object.assign(p, { x: s.x, y: s.y, z: s.z, vx: 0, vy: 0, vz: 0, yaw: s.yaw, pitch: s.pitch, ground: true, glide: false, boost: 0, fly: false, sprint: false, sneak: false, bodyYaw: s.yaw });
   }
   release() { this.keys = {}; this.p.sprint = false; this.p.sneak = false; }
+  visY() { return this.p.y - this.stepSmooth; }   // 見た目の足もとの高さ
   eyeH() { return this.p.sneak ? 1.27 : 1.62; }
   curH() { return this.p.sneak ? 1.5 : 1.8; }
   lookDir() { const p = this.p, cp = Math.cos(p.pitch); return [-Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp]; }
@@ -146,6 +148,7 @@ export class Controls {
       yy = b[4] + 1e-4;
     }
     if (yy - p.y > 0.6 || this.hits(nx, yy, nz, h)) return false;
+    this.stepSmooth += yy - p.y;
     p.x = nx; p.z = nz; p.y = yy;
     return true;
   }
@@ -183,11 +186,26 @@ export class Controls {
     if (!this.hits(nx, p.y, p.z, h)) p.x = nx; else if (!this.stepUp(nx, p.z, h)) p.vx = 0;
     const nz = p.z + p.vz * dt;
     if (!this.hits(p.x, p.y, nz, h)) p.z = nz; else if (!this.stepUp(p.x, nz, h)) p.vz = 0;
+    const wasGround = p.ground;
     let ny = p.y + p.vy * dt;
     p.ground = false;
     const b = this.hits(p.x, ny, p.z, h);
     if (b) { if (p.vy < 0) { ny = b[4]; p.ground = true; } else ny = b[1] - h; p.vy = 0; }
     p.y = ny;
+    // 坂をくだるとき、足が浮いてガタガタしないように、すぐ下の地面にすいつく
+    if (wasGround && !p.ground && p.vy <= 0 && !p.fly && !p.glide && (Math.abs(p.vx) + Math.abs(p.vz) > 0.1)) {
+      for (let d = 0.05; d <= 0.6001; d += 0.05) {   // 近いほうから、足もとの下に地面があるか探す
+        const b2 = this.hits(p.x, p.y - d, p.z, h);
+        if (!b2) continue;
+        const ty = b2[4];
+        if (ty <= p.y + 1e-6 && ty >= p.y - 0.6 - 1e-6 && !this.hits(p.x, ty + 1e-4, p.z, h)) {
+          this.stepSmooth += ty - p.y; p.y = ty; p.ground = true; p.vy = 0;
+        }
+        break;
+      }
+    }
+    this.stepSmooth *= Math.exp(-dt * 9);
+    if (Math.abs(this.stepSmooth) < 0.002) this.stepSmooth = 0;
     // 世界はループ: はしを越えたら、反対がわから出る(上下も)
     if (p.x >= N - 0.5) p.x -= N; else if (p.x < -0.5) p.x += N;
     if (p.z >= N - 0.5) p.z -= N; else if (p.z < -0.5) p.z += N;
@@ -206,7 +224,7 @@ export class Controls {
 
   // カメラを置く。視野角(ダッシュ・飛行・滑空で広がる)とズーム、視点(F5)
   camera(cam, dt) {
-    const p = this.p, ex = p.x, ey = p.y + this.eyeH(), ez = p.z, d = this.lookDir();
+    const p = this.p, ex = p.x, ey = p.y - this.stepSmooth + this.eyeH(), ez = p.z, d = this.lookDir();
     const tf = this.baseFov + (p.sprint ? 9 : 0) + (p.fly ? 3 : 0) + (p.glide ? Math.min(22, Math.hypot(p.vx, p.vy, p.vz) * 0.45) : 0);
     p.fov += (tf - p.fov) * (1 - Math.exp(-10 * dt));
     p.zm += (p.zt - p.zm) * (1 - Math.exp(-12 * dt));

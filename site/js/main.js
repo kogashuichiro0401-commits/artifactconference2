@@ -771,7 +771,7 @@ function frame(t) {
   me3d.root.visible = p.view !== 0;
   if (p.view !== 0) {
     me3d.pose({ hs: controls.hs || 0, bodyYaw: p.bodyYaw, yaw: p.yaw, pitch: p.pitch, glide: p.glide, fly: p.fly, sneak: p.sneak, sprint: p.sprint, air: !p.ground, rocket: p.boost > 0, swing: controls.swingP }, dt);
-    me3d.root.position.set(p.x, p.y, p.z);
+    me3d.root.position.set(p.x, controls.visY(), p.z);
   }
   if (charge && (panel || !locked || controls.p.glide || hud.selectedItem() !== "bow")) cancelCharge();
   const cf = chargeFrac();
