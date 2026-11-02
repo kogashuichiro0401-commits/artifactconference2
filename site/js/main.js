@@ -5,7 +5,7 @@ import { Net } from "./net.js";
 import { RemotePlayers, createAvatar } from "./players.js";
 import { createFirstPerson } from "./fp.js";
 import { createArrows } from "./arrows.js";
-import { restore, login, logout, getToken } from "./auth.js";
+import { restore, login, logout, getToken, loginGoogle, googleButton } from "./auth.js";
 import { VERSION } from "./version.js";
 import { World, buildChunk, CH } from "./world.js";
 import { BuildTool } from "./build.js";
@@ -188,6 +188,10 @@ hud = createHud({
   onClose: () => setPanel(null),
   onRespawn: () => controls.respawn(),
   onTouchEdit: () => { setPanel(null); if (touch) touch.startEdit(); },
+  onGoogleBtn: (host, note) => googleButton(host, async (cred) => {
+    const r = await loginGoogle(cred);
+    if (r.error) hud.renderLogin(r.error); else signedIn(r.user);
+  }, (why) => note(why === "off" ? "Googleでのログインは、まだ設定されていません。" : "Googleの部品を読み込めませんでした。IDとパスワードで入るか、しばらくしてからやり直してください。")),
   onLogin: async (u, p) => {
     const r = await login(u, p);
     if (r.error) return r;

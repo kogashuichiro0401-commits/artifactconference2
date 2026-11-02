@@ -36,3 +36,36 @@ export async function logout() {
   setToken("");
   if (token) await api({ action: "logout", token });
 }
+
+// ----- Googleでログイン(artifact学会本体と同じ。Googleの部品を読み込んで、ボタンを出す) -----
+let gState = null;   // { clientId, ready, handler }
+export function loginGoogle(credential) {
+  return api({ action: "loginGoogle", credential }).then((j) => {
+    if (j && j.ok && j.token && j.user) { setToken(j.token); return { user: j.user }; }
+    const msg = j && j.message ? j.message : j && j.error === "network" ? "通信できませんでした" : "Googleでのログインに失敗しました。もう一度試してください。";
+    return { error: msg };
+  });
+}
+// host にGoogleのボタンを出す。cred が届いたら onCred(cred)。使えないとき(未設定・読み込み失敗)は onFail(理由)
+export async function googleButton(host, onCred, onFail) {
+  try {
+    if (!gState) {
+      const j = await api({ action: "getGoogleConfig" });
+      gState = { clientId: j && j.ok ? String(j.clientId || "") : "", ready: false, handler: null };
+    }
+    if (!gState.clientId) { onFail("off"); return; }
+    gState.handler = onCred;
+    if (!window.google || !window.google.accounts) {
+      await new Promise((res, rej) => {
+        const sc = document.createElement("script");
+        sc.src = "https://accounts.google.com/gsi/client"; sc.async = true; sc.onload = res; sc.onerror = rej;
+        document.head.appendChild(sc);
+      });
+    }
+    if (!gState.ready) {
+      window.google.accounts.id.initialize({ client_id: gState.clientId, callback: (r) => { if (r && r.credential && gState.handler) gState.handler(r.credential); }, auto_select: false, cancel_on_tap_outside: true });
+      gState.ready = true;
+    }
+    window.google.accounts.id.renderButton(host, { type: "standard", theme: "outline", size: "large", text: "signin_with", shape: "pill", locale: "ja", width: 260 });
+  } catch (e) { onFail("load"); }
+}

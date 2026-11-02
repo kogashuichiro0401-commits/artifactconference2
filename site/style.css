@@ -167,3 +167,6 @@ body.touch .panel{touch-action:pan-y}
 @media (orientation:portrait){
   body.touch #trotate{display:grid;position:fixed;inset:0;z-index:50;place-items:center;background:rgba(0,0,0,.85);color:#fff;font-size:16px;font-weight:700;text-align:center;padding:24px}
 }
+
+.gslot{display:flex;flex-direction:column;align-items:center;gap:8px;margin:6px 0 14px;min-height:44px}
+.pwbox{margin-top:4px}.pwbox summary{cursor:pointer;color:var(--muted);font-size:13px;margin-bottom:8px}

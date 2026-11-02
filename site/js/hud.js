@@ -37,7 +37,7 @@ const BOOK = `
     <li><b>1〜9</b>…手に持つものを変える。<b>E</b>…持ち物。<b>Esc</b>…メニュー</li>
   </ul>`;
 
-export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onLogout, onRespawn, onTouchEdit }) {
+export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onLogout, onRespawn, onTouchEdit, onGoogleBtn }) {
   const $ = (id) => document.getElementById(id);
   const inv = new Array(36).fill(null);   // 0〜8がホットバー
   inv[0] = "bow";
@@ -129,13 +129,18 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
   function renderLogin(msg) {
     $("panel-login").innerHTML = `
       ${brand("3D")}
-      <p class="muted">artifact学会。のアカウントでログインしてください。(アカウントがない人は入れません)</p>
+      <p class="muted">artifact学会。のアカウントでログインしてください。(アカウントがない人は入れません。新規登録は、artifact学会の本体でGoogleアカウントを使って行います)</p>
       ${msg ? `<div class="err">${esc(msg)}</div>` : ""}
-      <form id="login-form" autocomplete="on">
-        <label class="field"><span>チャンネルID</span><input type="text" id="li-user" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
-        <label class="field"><span>パスワード</span><input type="password" id="li-pass" autocomplete="current-password"></label>
-        <button class="pill primary block" id="li-go" type="submit">ログイン</button>
-      </form>`;
+      <div id="g-slot" class="gslot"><div id="g-btn"></div><p class="muted" id="g-note" hidden></p></div>
+      <details class="pwbox"${msg ? " open" : ""}>
+        <summary>IDとパスワードで入る(Googleと連携していない人)</summary>
+        <form id="login-form" autocomplete="on">
+          <label class="field"><span>チャンネルID</span><input type="text" id="li-user" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+          <label class="field"><span>パスワード</span><input type="password" id="li-pass" autocomplete="current-password"></label>
+          <button class="pill primary block" id="li-go" type="submit">ログイン</button>
+        </form>
+      </details>`;
+    if (onGoogleBtn) onGoogleBtn($("g-btn"), (t) => { const n = $("g-note"); if (n) { n.hidden = false; n.textContent = t; } });
     const form = $("login-form");
     form.onsubmit = async (e) => {
       e.preventDefault();
