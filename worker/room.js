@@ -90,6 +90,27 @@ export class Room {
     this.broadcast({ t: "edit", x, y, z, v });
   }
 
+  // /clone x1 y1 z1 x2 y2 z2 dx dy dz: 始点と終点で囲んだ構造を、(dx,dy,dz) を始点にして、コピーする(管理者だけ)
+  handleClone(ws, a, m) {
+    if (!a.admin) return this.send(ws, { t: "deny", why: "権限がありません(管理者だけが使えるコマンドです)" });
+    const now = Date.now();
+    if (now - (a.fillAt || 0) < 400) return this.send(ws, { t: "deny", why: "コマンドが続けて送られました。少し待ってください" });
+    a.fillAt = now; ws.serializeAttachment(a);
+    const v = ["x1", "y1", "z1", "x2", "y2", "z2", "dx", "dy", "dz"].map((k) => Math.floor(Number(m[k])));
+    if (!v.every(Number.isFinite)) return;
+    const x1 = Math.min(v[0], v[3]), x2 = Math.max(v[0], v[3]), y1 = Math.min(v[1], v[4]), y2 = Math.max(v[1], v[4]), z1 = Math.min(v[2], v[5]), z2 = Math.max(v[2], v[5]);
+    const [dx, dy, dz] = [v[6], v[7], v[8]], sx = x2 - x1, sy = y2 - y1, sz = z2 - z1;
+    const inW = (x, y, z) => x >= 0 && x < N && z >= 0 && z < N && inRangeY(y);
+    if (!inW(x1, y1, z1) || !inW(x2, y2, z2) || !inW(dx, dy, dz) || !inW(dx + sx, dy + sy, dz + sz)) return this.send(ws, { t: "deny", why: "世界の外です(コピー元・貼りつけ先は、世界の中におさめてください)" });
+    const vol = (sx + 1) * (sy + 1) * (sz + 1);
+    if (vol > 32768) return this.send(ws, { t: "deny", why: "広すぎます(最大32768ブロック。今回は" + vol + ")" });
+    const snap = [];   // 重なっていてもこわれないよう、先に全部読む
+    for (let x = 0; x <= sx; x++) for (let y = 0; y <= sy; y++) for (let z = 0; z <= sz; z++) snap.push(this.cellValue(x1 + x, y1 + y, z1 + z));
+    let i = 0;
+    for (let x = 0; x <= sx; x++) for (let y = 0; y <= sy; y++) for (let z = 0; z <= sz; z++) { const val = snap[i++]; if (this.cellValue(dx + x, dy + y, dz + z) !== val) this.setCell(dx + x, dy + y, dz + z, val); }
+    this.broadcast({ t: "clone", x1, y1, z1, x2, y2, z2, dx, dy, dz, n: vol, by: a.name });
+  }
+
   // 過去のチャットを、新しい順に300件(before より前)。古い順にならべて返す
   async chatPage(before) {
     const opt = { prefix: "m:", reverse: true, limit: 301 };
@@ -234,6 +255,8 @@ export class Room {
       a.histAt = now; ws.serializeAttachment(a);
       const pg = await this.chatPage(Math.floor(Number(m.before)));
       this.send(ws, { t: "histmore", items: pg.items, more: pg.more });
+    } else if (m.t === "clone") {
+      this.handleClone(ws, a, m);
     } else if (m.t === "fill") {
       this.handleFill(ws, a, m);
     } else if (m.t === "swing") {

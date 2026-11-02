@@ -341,6 +341,13 @@ const net = new Net({
   onPos: (m) => remotes.setPos(m),
   onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
   onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, m.v ? BLOCK : 0); logSys((m.by ? m.by + " が " : "") + m.n + (m.v ? "ブロックをうめました" : "ブロックぶんを空気にしました")); },
+  onClone: (m) => {   // 自分の世界の中身を、先に全部読んでから、貼りつける(重なっていてもよい)
+    const sx = m.x2 - m.x1, sy = m.y2 - m.y1, sz = m.z2 - m.z1, snap = [];
+    for (let x = 0; x <= sx; x++) for (let y = 0; y <= sy; y++) for (let z = 0; z <= sz; z++) snap.push(world.get(m.x1 + x, m.y1 + y, m.z1 + z));
+    let i = 0;
+    for (let x = 0; x <= sx; x++) for (let y = 0; y <= sy; y++) for (let z = 0; z <= sz; z++) world.set(m.dx + x, m.dy + y, m.dz + z, snap[i++]);
+    logSys((m.by ? m.by + " が " : "") + m.n + "ブロックぶんをコピーしました");
+  },
   onChat: (m) => logChat(m),
   onHistMore: (m) => {
     chatAsking = false; chatMore = !!m.more;
@@ -545,6 +552,17 @@ function runCommand(line) {
     net.sendFill(c, mat);
     return;
   }
+  if (cmd === "clone") {
+    const usage = "Usage: /clone x1 y1 z1 x2 y2 z2 x y z   (囲んだ構造を、最後の x y z を始点にコピー。~ = your position)";
+    if (!isAdmin) { logSys("権限がありません(管理者だけが使えるコマンドです)"); return; }
+    if (a.length !== 10) { logSys(usage); return; }
+    const p = controls.p, base = [Math.round(p.x), Math.floor(p.y + 0.5 + 1e-6), Math.round(p.z)];
+    const c = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => coord(a[i + 1], base[i % 3]));
+    if (c.some((v) => !Number.isFinite(v))) { logSys("座標は整数か ~ で書いてください。" + usage); return; }
+    if (!net.ready()) { logSys("オフラインのときは、使えません"); return; }
+    net.sendClone(c);
+    return;
+  }
   if (cmd === "data") {
     const usage = "Usage: /data get pos";
     if (a.length === 3 && a[1].toLowerCase() === "get" && a[2].toLowerCase() === "pos") {
@@ -553,7 +571,7 @@ function runCommand(line) {
     } else logSys(usage);
     return;
   }
-  logSys("Unknown command: /" + cmd + "   (使えるコマンド: /fill, /data)");
+  logSys("Unknown command: /" + cmd + "   (使えるコマンド: /fill, /clone, /data)");
 }
 function submitCmd() {
   const line = cmdIn.value.trim(); closeCmd();

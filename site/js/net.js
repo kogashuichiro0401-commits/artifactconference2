@@ -39,6 +39,7 @@ export class Net {
   sendFill(c, mat) { this.send({ t: "fill", m: mat, x1: c[0], y1: c[1], z1: c[2], x2: c[3], y2: c[4], z2: c[5] }); }
   sendChat(text) { this.send({ t: "chat", text }); }
   sendHistMore(before) { this.send({ t: "histmore", before }); }
+  sendClone(c) { this.send({ t: "clone", x1: c[0], y1: c[1], z1: c[2], x2: c[3], y2: c[4], z2: c[5], dx: c[6], dy: c[7], dz: c[8] }); }
   sendSwing() { this.send({ t: "swing" }); }
   sendHit(id, k) { this.send({ t: "hit", id, k }); }
 
@@ -102,6 +103,7 @@ export class Net {
       case "fill": if (this.h.onFill) this.h.onFill(m); break;
       case "chat": if (this.h.onChat) this.h.onChat(m); break;
       case "histmore": if (this.h.onHistMore) this.h.onHistMore(m); break;
+      case "clone": if (this.h.onClone) this.h.onClone(m); break;
       case "swing": if (this.h.onSwing) this.h.onSwing(m); break;
       case "hit": if (this.h.onHit) this.h.onHit(m); break;
       case "hurt": if (this.h.onHurt) this.h.onHurt(m); break;
