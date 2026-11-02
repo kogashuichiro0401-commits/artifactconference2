@@ -208,7 +208,7 @@ hud = createHud({
   onLogout: async () => {
     await logout();
     net.stop(); netStarted = false; remotes.clear();
-    saveState(); stateUid = ""; worldReady = false; welcomed = false;
+    saveState(); stateUid = ""; worldReady = false; welcomed = false; loadStart = performance.now();
     user = null; isAdmin = false; controls.canFly = false; if (touch) { touch.setAdmin(false); touch.setBuild(false); } buildMode = false; hud.setAdmin(false); hud.setBuildMode(false);
     netState = "idle"; refreshOnline();
     setPanel("login");
@@ -254,8 +254,7 @@ function signedIn(u) {
   user = u;
   isAdmin = u.role === "admin"; buildMode = isAdmin && uiPrefs.f4; controls.canFly = isAdmin; if (touch) { touch.setAdmin(isAdmin); touch.setBuild(buildMode); }
   hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(buildMode);
-  restoreState(u);
-  startLoading(); ensureOnline();   // ログインしたらすぐ、世界を読み込みはじめる
+  startLoading(); ensureOnline();
   setPanel("menu");
 }
 
@@ -358,15 +357,18 @@ const net = new Net({
 });
 
 // ワールドの読み込み: サーバーから建築を受けとり、ブロックの見た目を作り終えるまで、世界に入れない
-let worldReady = false, welcomed = false, loadStart = 0;
+let worldReady = false, welcomed = false, loadStart = performance.now();   // 読み込みは、ページを開いた瞬間から始まる
 function startLoading() {
-  worldReady = false; welcomed = false; loadStart = performance.now();
+  worldReady = false;
   hud.setLoading(true);
 }
 function checkLoaded() {
   if (worldReady || !user) return;
   const give = netState === "full" || performance.now() - loadStart > 12000;   // つながらないときは、ひとりで遊べるように
-  if ((welcomed && !world.dirty.size) || give) { worldReady = true; hud.setLoading(false); }
+  if ((welcomed && !world.dirty.size) || give) {   // ブロックができあがってから、前回の続き(位置・持ち物など)を引きつぐ
+    restoreState(user); unstick();
+    worldReady = true; hud.setLoading(false);
+  }
 }
 function ensureOnline() {
   if (!netStarted && user) { netStarted = true; net.start(); }
@@ -671,6 +673,9 @@ if (isTouch) {
 }
 
 chunkGrid.visible = !!uiPrefs.f2; hud.setDebugShown(!!uiPrefs.f3);
+
+// ログインの確認を待たずに、ワールド(ブロック)の読み込みを始める(ログインが無効なら、サーバーが知らせてくれる)
+if (getToken()) { netStarted = true; net.start(); }
 
 // ----- はじめ: 保存してあるログインを確かめる -----
 setPanel("login");

@@ -167,7 +167,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       ${brand("v" + VERSION, true)}
       ${notice}
       <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}<span class="role">${user && user.role === "admin" ? "管理者" : "泳者"}</span></span><button class="pill" id="btn-logout">ログアウト</button></div>
-      <button class="pill primary block" id="btn-enter"${loading ? " disabled" : ""}>${loading ? "ワールドを読み込み中…" : entered ? "世界にもどる" : "世界に入る"}</button>
+      <button class="pill primary block" id="btn-enter"${loading ? " disabled" : ""}>${loading ? "ワールドと前回の続きを読み込み中…" : entered ? "世界にもどる" : "世界に入る"}</button>
       <button class="pill block" id="btn-respawn">スタート地点にもどる (R)</button>
       <h2>設定</h2>
       ${setRow("fov", "視野角", 50, 110, 1, settings.fov, "")}
@@ -234,7 +234,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     setLoading: (on) => {
       loading = on;
       const b = $("btn-enter");
-      if (b) { b.disabled = on; b.textContent = on ? "ワールドを読み込み中…" : entered ? "世界にもどる" : "世界に入る"; }
+      if (b) { b.disabled = on; b.textContent = on ? "ワールドと前回の続きを読み込み中…" : entered ? "世界にもどる" : "世界に入る"; }
     },
     setPose: () => {},
     setResume: (on) => { $("resume").hidden = !on; },
