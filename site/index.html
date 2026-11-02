@@ -24,8 +24,8 @@
         <svg id="compass" viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="18" fill="rgba(0,0,0,.38)" stroke="rgba(255,255,255,.7)"/><g transform="rotate(33 20 20)"><path d="M20 6 L25 21 L15 21 Z" fill="#ff5a4a"/><path d="M20 34 L25 21 L15 21 Z" fill="#e8e8e8"/></g><text x="20" y="40" text-anchor="middle" font-size="0"></text></svg>
       </div>
     </div>
-    <div id="chatlog"></div>
     <div id="debug" hidden></div>
+    <div id="chatlog"></div>
   </div>
   <div id="right">
     <div id="online"></div>
@@ -42,7 +42,7 @@
 </div>
 
 <div id="chathist" hidden></div>
-<form id="cmdbar" hidden autocomplete="off"><div id="cmdshow" hidden><span id="cs-a"></span><i id="cs-c"></i><span id="cs-b"></span></div><input id="cmd" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" maxlength="120"></form>
+<div id="cmdbar" hidden><div id="cmdwrap"><div id="cmdshow" hidden><span id="cs-a"></span><i id="cs-c"></i><span id="cs-b"></span></div><input id="cmd" type="text" name="craft-cmd-nosave" spellcheck="false" autocapitalize="off" autocomplete="off" data-lpignore="true" data-1p-ignore maxlength="120"></div></div>
 <div id="shade" hidden></div>
 <div id="panel-login" class="panel wide" hidden></div>
 <div id="panel-menu" class="panel wide" hidden></div>

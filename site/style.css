@@ -176,8 +176,9 @@ body.touch .panel{touch-action:pan-y}
 
 .setnum{width:64px;height:30px;padding:0 6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);text-align:right;user-select:text;-webkit-user-select:text}
 
-#chatlog{margin-top:6px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;max-width:min(420px,60vw)}
-.cl{padding:2px 8px;border-radius:4px;background:rgba(0,0,0,.38);color:#fff;font-size:13px;line-height:1.5;text-shadow:0 1px 2px rgba(0,0,0,.6);opacity:1;transition:opacity .6s;word-break:break-all}
+#chatlog{margin-top:6px;display:flex;flex-direction:column;align-items:stretch;gap:0;width:min(380px,60vw)}
+#cmdwrap{position:relative}#cmd{display:block}
+.cl{padding:2px 8px;border-radius:0;background:rgba(0,0,0,.4);color:#fff;font-size:13px;line-height:1.5;text-shadow:0 1px 2px rgba(0,0,0,.6);opacity:1;transition:opacity .6s;word-break:break-all}
 .cl.out{opacity:0}
 .cl b{color:#9fc2ff}.cl.cmd{color:#d8e8ff;font-family:ui-monospace,Consolas,monospace;font-size:12px}.cl.sys{color:#ffe9a8}
 #chathist{position:fixed;left:8px;bottom:48px;width:min(460px,92vw);max-height:38vh;overflow-y:auto;z-index:20;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,.5);color:#fff;font-size:13px;line-height:1.55;display:flex;flex-direction:column;gap:1px;user-select:text;-webkit-user-select:text}
@@ -188,3 +189,5 @@ body.touch .panel{touch-action:pan-y}
 #cmdshow i{display:inline-block;width:1px;height:17px;margin:0 -0.5px;background:#fff;vertical-align:middle;animation:cblink 1s steps(2,start) infinite}
 @keyframes cblink{50%{opacity:0}}
 body.touch #chatlog .cl{font-size:11px}
+
+#chatlog .cl:first-child{border-radius:4px 4px 0 0}#chatlog .cl:last-child{border-radius:0 0 4px 4px}#chatlog .cl:only-child{border-radius:4px}

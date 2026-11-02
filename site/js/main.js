@@ -431,7 +431,11 @@ function renderHist() {
   }
   histEl.scrollTop = histEl.scrollHeight;
 }
-const logSys = (text) => logLine("sys", "", text);                       // 実行の結果・お知らせ
+function logSys(text) {                                                 // 実行の結果(返り値)・お知らせ。履歴にも入る
+  history.push({ kind: "sys", name: "", text }); if (history.length > 80) history.shift();
+  logLine("sys", "", text);
+  if (!histEl.hidden) renderHist();
+}
 function logChat(name, text) {                                           // 誰かのチャット(全員に見える)
   history.push({ kind: "chat", name, text }); if (history.length > 80) history.shift();
   logLine("chat", name, text, 12000);
@@ -516,11 +520,16 @@ function submitCmd() {
   if (!net.ready()) { logSys("オフラインのときは、チャットできません"); return; }
   net.sendChat(line);
 }
-cmdBar.addEventListener("submit", (e) => { e.preventDefault(); submitCmd(); });
 cmdIn.addEventListener("keydown", (e) => {
   e.stopPropagation();
   if (e.code === "Escape") { e.preventDefault(); closeCmd(); return; }
-  if (e.code === "Enter" && (e.isComposing || e.keyCode === 229)) e.preventDefault();   // 変換の確定のEnterでは、送らない
+  if (e.code === "Enter" || e.code === "NumpadEnter") {
+    e.preventDefault();
+    if (!e.isComposing && e.keyCode !== 229) submitCmd();   // 変換の確定のEnterでは、送らない
+    return;
+  }
+  // チャットの欄が空のまま、消すキーを押したら、やめる
+  if ((e.code === "Backspace" || e.code === "Delete") && cmdMode === "chat" && cmdIn.value === "") { e.preventDefault(); closeCmd(); }
 });
 cmdIn.addEventListener("keyup", (e) => e.stopPropagation());
 cmdIn.addEventListener("input", () => {
