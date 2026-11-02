@@ -184,7 +184,7 @@ let netStarted = false;
 hud = createHud({
   settings,
   onSettings: () => { applySettings(); try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (e) { /* 保存できなくても動く */ } },
-  onEnter: () => { if (user) { if (isTouch) tryFullscreen(); setPanel(null); } },
+  onEnter: () => { askNotify(); if (user) { if (isTouch) tryFullscreen(); setPanel(null); } },
   onClose: () => setPanel(null),
   onRespawn: () => controls.respawn(),
   onTouchEdit: () => { setPanel(null); if (touch) touch.startEdit(); },
@@ -213,6 +213,36 @@ function signedIn(u) {
   hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(false);
   setPanel("menu");
 }
+
+// ----- 更新の検知: 新しいバージョンが公開されたら、タブの題名・通知で知らせる -----
+const BASE_TITLE = document.title;
+let updateSeen = "", titleTimer = 0;
+function askNotify() {
+  try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch (e) { /* 使えない端末では、タブの題名だけ */ }
+}
+function updateFound(v) {
+  if (!v || v === VERSION || v === updateSeen) return;
+  updateSeen = v;
+  hud.setUpdate(v);
+  clearInterval(titleTimer);
+  let on = false;
+  titleTimer = setInterval(() => { on = !on; document.title = on ? `【更新あり v${v}】${BASE_TITLE}` : BASE_TITLE; }, 1000);   // タブの題名を点滅
+  try {
+    if ("Notification" in window && Notification.permission === "granted") {
+      const n = new Notification("artifact学会。 3D が更新されました", { body: `新しいバージョン v${v} があります。タブにもどって、再読み込みしてください。`, tag: "craft-update" });
+      n.onclick = () => { window.focus(); n.close(); };
+    }
+  } catch (e) { /* 通知が出せなくても、題名とお知らせは出る */ }
+}
+async function pollVersion() {
+  try {
+    const r = await fetch("/api/version", { cache: "no-store" });
+    const j = await r.json();
+    if (j && j.version) updateFound(String(j.version));
+  } catch (e) { /* つながらないときは、次の回に */ }
+}
+setInterval(pollVersion, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pollVersion(); });
 
 // ----- 通信(ほかのプレイヤー) -----
 const remotes = new RemotePlayers(THREE, scene);
@@ -252,7 +282,7 @@ const net = new Net({
     for (const e of m.edits || []) world.set(e[0], e[1], e[2], e[3]);   // みんなが作った建築を反映
     remotes.clear();
     for (const p of m.players) remotes.add(p);
-    if (m.version !== VERSION) hud.setUpdate(m.version);   // 古い画面のまま遊んでいる
+    if (m.version !== VERSION) updateFound(m.version);   // 古い画面のまま遊んでいる
     forceSend = true;
     hpNow = 20; hud.setHealth(20, false);
     refreshOnline();
