@@ -34,7 +34,7 @@ export class World {
     this.cells[this.idx(x, y, z)] = v;
     // 光は遠くまで広がるので、変更があったら、明るさを計算しなおして、全部の区画を作りなおす
     this.lightDirty = true;
-    const nc = N / CH;
+    const nc = Math.ceil(N / CH);
     for (let i = 0; i < nc * nc; i++) this.dirty.add(i);
   }
 
@@ -186,7 +186,7 @@ export function buildChunk(world, cx, cz) {
     }
     return Math.max(0, m);
   };
-  for (let x = cx * CH; x < cx * CH + CH; x++) for (let z = cz * CH; z < cz * CH + CH; z++) for (let y = YMIN; y < YMIN + YN; y++) {
+  for (let x = cx * CH; x < Math.min(N, cx * CH + CH); x++) for (let z = cz * CH; z < Math.min(N, cz * CH + CH); z++) for (let y = YMIN; y < YMIN + YN; y++) {
     const v = world.get(x, y, z);
     if (!v) continue;
     if (v & BLOCK) {

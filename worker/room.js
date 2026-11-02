@@ -19,7 +19,7 @@ function cleanName(s) {
 function pose(m, base) {
   return {
     x: r2(num(m.x, -1, N, base?.x ?? N / 2)),
-    y: r2(num(m.y, YMIN - 1, YMIN + YN + 1, base?.y ?? 1.5)),
+    y: r2(num(m.y, YMIN - 1, YMIN + YN + 1, base?.y ?? YMIN + 0.5)),
     z: r2(num(m.z, -1, N, base?.z ?? N / 2)),
     yaw: r2(num(m.yaw, -1000, 1000, base?.yaw ?? 0)),
     pitch: r2(num(m.pitch, -1.6, 1.6, base?.pitch ?? 0)),
@@ -31,6 +31,8 @@ function pose(m, base) {
 
 const pub = (a) => ({ id: a.id, name: a.name, x: a.x, y: a.y, z: a.z, yaw: a.yaw, pitch: a.pitch, fly: a.fly, sneak: a.sneak, glide: a.glide });
 const posMsg = (a) => ({ t: "pos", id: a.id, x: a.x, y: a.y, z: a.z, yaw: a.yaw, pitch: a.pitch, fly: a.fly, sneak: a.sneak, glide: a.glide });
+
+const WORLD_VER = "box49";   // 世界の作りが変わったら、ここを変える(古い建築データが消える)
 
 export class Room {
   constructor(ctx, env) {
@@ -45,6 +47,13 @@ export class Room {
       // チャットの記録は、消さずにすべて残す(通し番号の最後を読む)
       const last = await ctx.storage.list({ prefix: "m:", reverse: true, limit: 1 });
       for (const [k] of last) this.chatSeq = parseInt(k.slice(2), 10) || 0;
+      // 世界の作りが変わったときは、古い建築データ(e:)をぜんぶ消す。チャットは消さない
+      if ((await ctx.storage.get("worldv")) !== WORLD_VER) {
+        const old = await ctx.storage.list({ prefix: "e:" });
+        const keys = [...old.keys()];
+        for (let i = 0; i < keys.length; i += 100) await ctx.storage.delete(keys.slice(i, i + 100));
+        await ctx.storage.put("worldv", WORLD_VER);
+      }
       const all = await ctx.storage.list({ prefix: "e:" });
       for (const [k, v] of all) {
         const [ex, ey, ez] = k.slice(2).split(",").map(Number);

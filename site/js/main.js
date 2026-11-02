@@ -36,7 +36,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
 scene.fog = new THREE.Fog(SKY, 70, 190);
-// 世界(48x48x48)のはしを、青い枠で示す
+// 世界(49x49x49)のはしを、青い枠で示す
 {
   const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(N, YN, N));
   const fr = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1f6bff, fog: false }));
@@ -45,11 +45,13 @@ scene.fog = new THREE.Fog(SKY, 70, 190);
 }
 // F2: 16ブロックごとの区切り(16×16×16の箱)
 const chunkGrid = (() => {
-  const v = [], x0 = -0.5, y0 = YMIN - 0.5, z0 = -0.5, S = 16, K = N / S;
-  for (let a = 0; a <= K; a++) for (let b = 0; b <= K; b++) {
-    v.push(x0, y0 + a * S, z0 + b * S, x0 + N, y0 + a * S, z0 + b * S);   // x方向
-    v.push(x0 + a * S, y0, z0 + b * S, x0 + a * S, y0 + YN, z0 + b * S);   // y方向
-    v.push(x0 + a * S, y0 + b * S, z0, x0 + a * S, y0 + b * S, z0 + N);   // z方向
+  const v = [], x0 = -0.5, y0 = YMIN - 0.5, z0 = -0.5, S = 16, pos = [];
+  for (let k = 0; k < N; k += S) pos.push(k);
+  pos.push(N);   // 16ごとの区切り。さいごのはんぱな区画のはしも
+  for (const a of pos) for (const b of pos) {
+    v.push(x0, y0 + a, z0 + b, x0 + N, y0 + a, z0 + b);   // x方向
+    v.push(x0 + a, y0, z0 + b, x0 + a, y0 + YN, z0 + b);   // y方向
+    v.push(x0 + a, y0 + b, z0, x0 + a, y0 + b, z0 + N);   // z方向
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
@@ -99,9 +101,9 @@ const sunSprite = (() => {
 
 // ----- 世界: ブロックとプレート。横・縦ともにループするので、まわりに27個のコピーを並べて、切れ目なく見せる -----
 const world = new World();
-world.spawn = { x: N / 2, y: 1.5, z: N / 2, yaw: 0, pitch: 0 };
+world.spawn = { x: Math.floor(N / 2), y: YMIN + 0.5, z: Math.floor(N / 2), yaw: 0, pitch: 0 };
 const worldMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
-const NC = N / CH;
+const NC = Math.ceil(N / CH);
 const offsets = [];
 for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) offsets.push([dx * N, dy * YN, dz * N]);
 const chunkMeshes = [];
