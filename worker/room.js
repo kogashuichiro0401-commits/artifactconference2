@@ -101,7 +101,7 @@ export class Room {
     return { items: items.reverse(), more };
   }
 
-  // /fill x1 y1 z1 x2 y2 z2 block: 直方体の中を、すべてブロックにする(管理者だけ)
+  // /fill x1 y1 z1 x2 y2 z2 block|air: 直方体の中を、すべてブロック(または空気)にする(管理者だけ)
   handleFill(ws, a, m) {
     if (!a.admin) return this.send(ws, { t: "deny", why: "権限がありません(管理者だけが使えるコマンドです)" });
     const now = Date.now();
@@ -111,10 +111,11 @@ export class Room {
     if (!v.every(Number.isFinite)) return;
     const [x1, x2] = [Math.min(v[0], v[3]), Math.max(v[0], v[3])], [y1, y2] = [Math.min(v[1], v[4]), Math.max(v[1], v[4])], [z1, z2] = [Math.min(v[2], v[5]), Math.max(v[2], v[5])];
     if (x1 < 0 || x2 >= N || z1 < 0 || z2 >= N || !inRangeY(y1) || !inRangeY(y2)) return this.send(ws, { t: "deny", why: "世界の外です(x,zは0〜" + (N - 1) + "、yは" + YMIN + "〜" + (YMIN + YN - 1) + ")" });
+    const val = m.m === "air" ? 0 : BLOCK;   // air=空気(ブロックもプレートも消す) / block=ブロック
     const vol = (x2 - x1 + 1) * (y2 - y1 + 1) * (z2 - z1 + 1);
     if (vol > 32768) return this.send(ws, { t: "deny", why: "広すぎます(最大32768ブロック。今回は" + vol + ")" });
-    for (let x = x1; x <= x2; x++) for (let y = y1; y <= y2; y++) for (let z = z1; z <= z2; z++) if (this.cellValue(x, y, z) !== BLOCK) this.setCell(x, y, z, BLOCK);
-    this.broadcast({ t: "fill", x1, y1, z1, x2, y2, z2, n: vol, by: a.name });
+    for (let x = x1; x <= x2; x++) for (let y = y1; y <= y2; y++) for (let z = z1; z <= z2; z++) if (this.cellValue(x, y, z) !== val) this.setCell(x, y, z, val);
+    this.broadcast({ t: "fill", x1, y1, z1, x2, y2, z2, n: vol, v: val, by: a.name });
   }
 
   // なぐった/矢が当たった: 近さと間隔を確かめて、ダメージ1。当たった人にはノックバックの向きも送る

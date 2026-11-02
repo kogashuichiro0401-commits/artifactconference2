@@ -340,7 +340,7 @@ const net = new Net({
   onLeave: (id) => { remotes.remove(id); refreshOnline(); },
   onPos: (m) => remotes.setPos(m),
   onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
-  onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, BLOCK); logSys((m.by ? m.by + " が " : "") + m.n + "ブロックをうめました"); },
+  onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, m.v ? BLOCK : 0); logSys((m.by ? m.by + " が " : "") + m.n + (m.v ? "ブロックをうめました" : "ブロックぶんを空気にしました")); },
   onChat: (m) => logChat(m),
   onHistMore: (m) => {
     chatAsking = false; chatMore = !!m.more;
@@ -532,15 +532,16 @@ function runCommand(line) {
   const cmd = a[0].toLowerCase();
   logCmd("/" + a.join(" "));
   if (cmd === "fill") {
-    const usage = "Usage: /fill x1 y1 z1 x2 y2 z2 block   (~ = your position)";
+    const usage = "Usage: /fill x1 y1 z1 x2 y2 z2 block|air   (~ = your position)";
     if (!isAdmin) { logSys("権限がありません(管理者だけが使えるコマンドです)"); return; }
     if (a.length !== 8) { logSys(usage); return; }
-    if (a[7].toLowerCase() !== "block") { logSys("使えるのは block だけです。" + usage); return; }
+    const mat = a[7].toLowerCase();
+    if (mat !== "block" && mat !== "air") { logSys("使えるのは block と air だけです。" + usage); return; }
     const p = controls.p, base = [Math.round(p.x), Math.floor(p.y + 0.5 + 1e-6), Math.round(p.z)];
     const c = [0, 1, 2, 3, 4, 5].map((i) => coord(a[i + 1], base[i % 3]));
     if (c.some((v) => !Number.isFinite(v))) { logSys("座標は整数か ~ で書いてください。" + usage); return; }
     if (!net.ready()) { logSys("オフラインのときは、使えません"); return; }
-    net.sendFill(c);
+    net.sendFill(c, mat);
     return;
   }
   if (cmd === "data") {

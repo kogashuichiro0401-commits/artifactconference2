@@ -1,8 +1,14 @@
 // バージョンと更新履歴。更新するたびに、ここの先頭に1件足す。
 // (メニューの「更新履歴」にそのまま表示される。サーバーも、ここを見て「更新」を知らせる)
-export const VERSION = "0.9.13";
+export const VERSION = "0.9.14";
 
 export const CHANGELOG = [
+  {
+    at: "2026-11-02",
+    version: "0.9.14",
+    summary: "/fill に air を追加。「/fill x1 y1 z1 x2 y2 z2 air」で、囲んだ直方体の中のブロック・プレートをすべて消せる(床も消せる)。block は、これまでどおり",
+    prompt: "fillコマンドにblockのほかにairを追加",
+  },
   {
     at: "2026-11-02",
     version: "0.9.13",

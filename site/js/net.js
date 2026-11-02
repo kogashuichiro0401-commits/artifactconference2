@@ -36,7 +36,7 @@ export class Net {
     this.send({ t: "shoot", x: pos[0], y: pos[1], z: pos[2], vx: vel[0], vy: vel[1], vz: vel[2] });
   }
 
-  sendFill(c) { this.send({ t: "fill", x1: c[0], y1: c[1], z1: c[2], x2: c[3], y2: c[4], z2: c[5] }); }
+  sendFill(c, mat) { this.send({ t: "fill", m: mat, x1: c[0], y1: c[1], z1: c[2], x2: c[3], y2: c[4], z2: c[5] }); }
   sendChat(text) { this.send({ t: "chat", text }); }
   sendHistMore(before) { this.send({ t: "histmore", before }); }
   sendSwing() { this.send({ t: "swing" }); }
