@@ -40,7 +40,11 @@ export class Room {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
     // 建築の変更(はじめの世界との差)を、保存してあるものから読み込む
     this.edits = new Map();   // "x,y,z" → セルの値
+    this.chatSeq = 0;
     ctx.blockConcurrencyWhile(async () => {
+      // チャットの記録は、消さずにすべて残す(通し番号の最後を読む)
+      const last = await ctx.storage.list({ prefix: "m:", reverse: true, limit: 1 });
+      for (const [k] of last) this.chatSeq = parseInt(k.slice(2), 10) || 0;
       const all = await ctx.storage.list({ prefix: "e:" });
       for (const [k, v] of all) {
         const [ex, ey, ez] = k.slice(2).split(",").map(Number);
@@ -84,6 +88,17 @@ export class Room {
     else return;
     this.setCell(x, y, z, v);
     this.broadcast({ t: "edit", x, y, z, v });
+  }
+
+  // 過去のチャットを、新しい順に300件(before より前)。古い順にならべて返す
+  async chatPage(before) {
+    const opt = { prefix: "m:", reverse: true, limit: 301 };
+    if (Number.isFinite(before) && before > 0) opt.end = "m:" + String(before).padStart(10, "0");
+    const got = await this.ctx.storage.list(opt), items = [];
+    for (const [, v] of got) items.push(v);
+    const more = items.length > 300;
+    if (more) items.pop();
+    return { items: items.reverse(), more };
   }
 
   // /fill x1 y1 z1 x2 y2 z2 block: 直方体の中を、すべてブロックにする(管理者だけ)
@@ -186,7 +201,8 @@ export class Room {
       ws.serializeAttachment(me);
       const edits = [];
       for (const [k, v] of this.edits) { const [ex, ey, ez] = k.split(",").map(Number); edits.push([ex, ey, ez, v]); }
-      this.send(ws, { t: "welcome", id: me.id, name: me.name, admin: me.admin, version: VERSION, max: MAX_PLAYERS, players: list.map((p) => pub(p.a)), edits });
+      const recent = await this.chatPage(null);
+      this.send(ws, { t: "welcome", chat: recent.items, chatMore: recent.more, id: me.id, name: me.name, admin: me.admin, version: VERSION, max: MAX_PLAYERS, players: list.map((p) => pub(p.a)), edits });
       this.broadcast({ t: "join", p: pub(me) }, ws);
       return;
     }
@@ -208,7 +224,15 @@ export class Room {
       const text = String(m.text ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120);
       if (!text) return;
       a.chatAt = now; ws.serializeAttachment(a);
-      this.broadcast({ t: "chat", id: a.id, name: a.name, text });
+      const seq = ++this.chatSeq, rec = { seq, name: a.name, text, at: now };
+      this.ctx.storage.put("m:" + String(seq).padStart(10, "0"), rec);   // 保存(消さない)
+      this.broadcast({ t: "chat", id: a.id, ...rec });
+    } else if (m.t === "histmore") {
+      const now = Date.now();
+      if (now - (a.histAt || 0) < 300) return;
+      a.histAt = now; ws.serializeAttachment(a);
+      const pg = await this.chatPage(Math.floor(Number(m.before)));
+      this.send(ws, { t: "histmore", items: pg.items, more: pg.more });
     } else if (m.t === "fill") {
       this.handleFill(ws, a, m);
     } else if (m.t === "swing") {

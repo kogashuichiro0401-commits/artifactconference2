@@ -254,6 +254,7 @@ function signedIn(u) {
   user = u;
   isAdmin = u.role === "admin"; buildMode = isAdmin && uiPrefs.f4; controls.canFly = isAdmin; if (touch) { touch.setAdmin(isAdmin); touch.setBuild(buildMode); }
   hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(buildMode);
+  loadLocalHist();
   startLoading(); ensureOnline();
   setPanel("menu");
 }
@@ -329,6 +330,9 @@ const net = new Net({
     for (const p of m.players) remotes.add(p);
     if (m.version !== VERSION) updateFound(m.version);   // 古い画面のまま遊んでいる
     forceSend = true; welcomed = true;
+    chatMore = !!m.chatMore;
+    for (const r of m.chat || []) addChatRec(r, false);   // 過去のチャット(サーバーに全部残っている)
+    if (!histEl.hidden) renderHist(true);
     hpNow = 20; hud.setHealth(20, false);
     refreshOnline();
   },
@@ -337,7 +341,12 @@ const net = new Net({
   onPos: (m) => remotes.setPos(m),
   onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
   onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, BLOCK); logSys((m.by ? m.by + " が " : "") + m.n + "ブロックをうめました"); },
-  onChat: (m) => logChat(m.name || "?", m.text || ""),
+  onChat: (m) => logChat(m),
+  onHistMore: (m) => {
+    chatAsking = false; chatMore = !!m.more;
+    for (const r of m.items || []) addChatRec(r, false);
+    if (!histEl.hidden) renderHist("older");
+  },
   onSwing: (m) => remotes.swing(m.id),
   onHit: (m) => remotes.flash(m.id),
   onHurt: (m) => {   // 自分がやられた: 体力・ノックバック
@@ -409,43 +418,74 @@ function setPanel(name) {
 
 // ----- ログ(左上。しばらくすると消える)とチャット・コマンド(/ か T で左下に入力欄) -----
 const logEl = document.getElementById("chatlog"), histEl = document.getElementById("chathist");
-const history = [];   // { kind: "chat" | "cmd", name, text } 新しいほうが後ろ
+// 履歴(入力欄の上)は、絶対に消さない: チャットはサーバーに全部残り、自分のコマンドと結果は、このブラウザに全部残る
+const history = [];   // { kind: "chat" | "cmd" | "sys", name, text, at, seq? } 古いものが前、新しいものが後ろ
+const chatSeen = new Set();   // 追加ずみのチャットの通し番号(つなぎ直しても、重ならないように)
+let chatMore = false, chatOldest = 0, chatAsking = false;
+const LKEY = () => "craft-hist:" + (user && (user.uid || user.username) || "x");
+function saveLocalHist() {
+  try { localStorage.setItem(LKEY(), JSON.stringify(history.filter((h) => h.kind !== "chat").map((h) => [h.kind, h.text, h.at]))); } catch (e) { /* 入りきらないときは、メモリには残る */ }
+}
+function loadLocalHist() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(LKEY()) || "[]");
+    for (const [kind, text, at] of arr) if (!history.some((h) => h.kind === kind && h.at === at && h.text === text)) history.push({ kind, name: "", text, at });
+    history.sort((x, y) => x.at - y.at);
+  } catch (e) { /* 読めなければ、なし */ }
+}
+function addHist(h) {
+  history.push(h);
+  if (h.kind !== "chat") saveLocalHist();
+  if (!histEl.hidden) renderHist(true);
+}
 function logLine(cls, name, text, ms = 9000) {
   const el = document.createElement("div");
   el.className = "cl " + cls;
   if (name) { const n = document.createElement("b"); n.textContent = name; el.append(n, " "); }
   el.append(text);
   logEl.appendChild(el);
-  while (logEl.children.length > 8) logEl.firstChild.remove();
+  while (logEl.children.length > 8) logEl.firstChild.remove();   // 画面の通知を減らすだけ(履歴は消えない)
   setTimeout(() => el.classList.add("out"), ms);
   setTimeout(() => el.remove(), ms + 700);
 }
-function renderHist() {
+function renderHist(keepBottom) {
+  const wasBottom = histEl.scrollHeight - histEl.scrollTop - histEl.clientHeight < 30, oldH = histEl.scrollHeight, oldTop = histEl.scrollTop;
   histEl.textContent = "";
-  for (const h of history.slice(-40)) {
+  for (const h of history) {
     const d = document.createElement("div");
     d.className = "hl " + h.kind;
     if (h.name) { const n = document.createElement("b"); n.textContent = h.name; d.append(n, " "); }
     d.append(h.text);
     histEl.appendChild(d);
   }
-  histEl.scrollTop = histEl.scrollHeight;
+  if (keepBottom === "older") histEl.scrollTop = oldTop + (histEl.scrollHeight - oldH);   // 古いものを足したときは、見ていた位置のまま
+  else if (keepBottom !== true || wasBottom) histEl.scrollTop = histEl.scrollHeight;
+  else histEl.scrollTop = oldTop;
 }
-function logSys(text) {                                                 // 実行の結果(返り値)・お知らせ。履歴にも入る
-  history.push({ kind: "sys", name: "", text }); if (history.length > 80) history.shift();
+function addChatRec(r, live) {
+  if (chatSeen.has(r.seq)) return;
+  chatSeen.add(r.seq);
+  if (!chatOldest || r.seq < chatOldest) chatOldest = r.seq;
+  const h = { kind: "chat", name: r.name || "?", text: r.text || "", at: r.at || Date.now(), seq: r.seq };
+  if (live) { history.push(h); } else { history.push(h); history.sort((x, y) => x.at - y.at); }
+}
+function logSys(text) {                                                 // 実行の結果(返り値)・お知らせ
+  addHist({ kind: "sys", name: "", text, at: Date.now() });
   logLine("sys", "", text);
-  if (!histEl.hidden) renderHist();
 }
-function logChat(name, text) {                                           // 誰かのチャット(全員に見える)
-  history.push({ kind: "chat", name, text }); if (history.length > 80) history.shift();
-  logLine("chat", name, text, 12000);
-  if (!histEl.hidden) renderHist();
+function logChat(r) {                                                    // 誰かのチャット(全員に見える)
+  addChatRec(r, true);
+  if (!histEl.hidden) renderHist(true);
+  logLine("chat", r.name || "?", r.text || "", 12000);
 }
 function logCmd(text) {                                                  // 自分が実行したコマンド
-  history.push({ kind: "cmd", name: "", text }); if (history.length > 80) history.shift();
+  addHist({ kind: "cmd", name: "", text, at: Date.now() });
   logLine("cmd", "", text);
-  if (!histEl.hidden) renderHist();
 }
+// 履歴のいちばん上までスクロールしたら、もっと古いチャットをサーバーに頼む
+histEl.addEventListener("scroll", () => {
+  if (histEl.scrollTop < 4 && chatMore && !chatAsking && net.ready()) { chatAsking = true; net.sendHistMore(chatOldest); }
+});
 
 let cmdOpen = false, cmdMode = "cmd";   // "cmd": / から始まるコマンド(英語だけ)  "chat": チャット
 const cmdBar = document.getElementById("cmdbar"), cmdIn = document.getElementById("cmd"), cmdShow = document.getElementById("cmdshow");
