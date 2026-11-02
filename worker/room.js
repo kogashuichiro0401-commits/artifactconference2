@@ -99,7 +99,7 @@ export class Room {
     const vol = (x2 - x1 + 1) * (y2 - y1 + 1) * (z2 - z1 + 1);
     if (vol > 32768) return this.send(ws, { t: "deny", why: "広すぎます(最大32768ブロック。今回は" + vol + ")" });
     for (let x = x1; x <= x2; x++) for (let y = y1; y <= y2; y++) for (let z = z1; z <= z2; z++) if (this.cellValue(x, y, z) !== BLOCK) this.setCell(x, y, z, BLOCK);
-    this.broadcast({ t: "fill", x1, y1, z1, x2, y2, z2, n: vol });
+    this.broadcast({ t: "fill", x1, y1, z1, x2, y2, z2, n: vol, by: a.name });
   }
 
   // なぐった/矢が当たった: 近さと間隔を確かめて、ダメージ1。当たった人にはノックバックの向きも送る
@@ -201,6 +201,14 @@ export class Room {
       this.broadcast(posMsg(a), ws);
     } else if (m.t === "edit") {
       this.handleEdit(ws, a, m);
+    } else if (m.t === "chat") {
+      // チャット: 全員に(自分にも)届ける。長さと間隔を制限する
+      const now = Date.now();
+      if (now - (a.chatAt || 0) < 400) return;
+      const text = String(m.text ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120);
+      if (!text) return;
+      a.chatAt = now; ws.serializeAttachment(a);
+      this.broadcast({ t: "chat", id: a.id, name: a.name, text });
     } else if (m.t === "fill") {
       this.handleFill(ws, a, m);
     } else if (m.t === "swing") {

@@ -298,7 +298,8 @@ const net = new Net({
   onLeave: (id) => { remotes.remove(id); refreshOnline(); },
   onPos: (m) => remotes.setPos(m),
   onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
-  onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, BLOCK); hud.say(m.n + "ブロックをうめました"); },
+  onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, BLOCK); logSys((m.by ? m.by + " が " : "") + m.n + "ブロックをうめました"); },
+  onChat: (m) => logChat(m.name || "?", m.text || ""),
   onSwing: (m) => remotes.swing(m.id),
   onHit: (m) => remotes.flash(m.id),
   onHurt: (m) => {   // 自分がやられた: 体力・ノックバック
@@ -353,18 +354,62 @@ function setPanel(name) {
   if (name) { exitLock(); hud.setResume(false); } else { ensureOnline(); requestLock(); hud.setResume(!locked); }
 }
 
-// ----- コマンド(/ で開く。左下に入力欄。英語だけ) -----
-let cmdOpen = false;
+// ----- ログ(左上。しばらくすると消える)とチャット・コマンド(/ か T で左下に入力欄) -----
+const logEl = document.getElementById("chatlog"), histEl = document.getElementById("chathist");
+const history = [];   // { kind: "chat" | "cmd", name, text } 新しいほうが後ろ
+function logLine(cls, name, text, ms = 9000) {
+  const el = document.createElement("div");
+  el.className = "cl " + cls;
+  if (name) { const n = document.createElement("b"); n.textContent = name; el.append(n, " "); }
+  el.append(text);
+  logEl.appendChild(el);
+  while (logEl.children.length > 8) logEl.firstChild.remove();
+  setTimeout(() => el.classList.add("out"), ms);
+  setTimeout(() => el.remove(), ms + 700);
+}
+function renderHist() {
+  histEl.textContent = "";
+  for (const h of history.slice(-40)) {
+    const d = document.createElement("div");
+    d.className = "hl " + h.kind;
+    if (h.name) { const n = document.createElement("b"); n.textContent = h.name; d.append(n, " "); }
+    d.append(h.text);
+    histEl.appendChild(d);
+  }
+  histEl.scrollTop = histEl.scrollHeight;
+}
+const logSys = (text) => logLine("sys", "", text);                       // 実行の結果・お知らせ
+function logChat(name, text) {                                           // 誰かのチャット(全員に見える)
+  history.push({ kind: "chat", name, text }); if (history.length > 80) history.shift();
+  logLine("chat", name, text, 12000);
+  if (!histEl.hidden) renderHist();
+}
+function logCmd(text) {                                                  // 自分が実行したコマンド
+  history.push({ kind: "cmd", name: "", text }); if (history.length > 80) history.shift();
+  logLine("cmd", "", text);
+  if (!histEl.hidden) renderHist();
+}
+
+let cmdOpen = false, cmdMode = "cmd";   // "cmd": / から始まるコマンド(英語だけ)  "chat": チャット
 const cmdBar = document.getElementById("cmdbar"), cmdIn = document.getElementById("cmd");
-function openCmd() {
+function setMode(mode) {
+  cmdMode = mode;
+  // コマンドは、type=password にして、日本語入力(IME)を自動で切って英数入力にする(文字は見えるまま)
+  cmdIn.type = mode === "cmd" ? "password" : "text";
+  cmdIn.classList.toggle("plain", mode === "cmd");
+  cmdIn.placeholder = mode === "chat" ? "チャット (Enterで送る / Escでやめる)" : "";
+}
+function openCmd(mode) {
   if (cmdOpen || panel || !user) return;
   cmdOpen = true; exitLock();
-  cmdBar.hidden = false; cmdIn.value = "/"; cmdIn.focus();
-  cmdIn.setSelectionRange(1, 1);
+  setMode(mode);
+  cmdBar.hidden = false; histEl.hidden = false; renderHist();
+  cmdIn.value = mode === "cmd" ? "/" : ""; cmdIn.focus();
+  cmdIn.setSelectionRange(cmdIn.value.length, cmdIn.value.length);
 }
 function closeCmd() {
   if (!cmdOpen) return;
-  cmdOpen = false; cmdBar.hidden = true; cmdIn.blur();
+  cmdOpen = false; cmdBar.hidden = true; histEl.hidden = true; cmdIn.blur(); cmdIn.value = "";
   if (!panel) requestLock();
 }
 // 数字、または ~(いまの位置)・~3(いまの位置から+3)
@@ -377,30 +422,41 @@ function runCommand(line) {
   const a = line.trim().replace(/^\//, "").split(/\s+/).filter(Boolean);
   if (!a.length) return;
   const cmd = a[0].toLowerCase();
+  logCmd("/" + a.join(" "));
   if (cmd === "fill") {
     const usage = "Usage: /fill x1 y1 z1 x2 y2 z2 block   (~ = your position)";
-    if (!isAdmin) { hud.say("権限がありません(管理者だけが使えるコマンドです)"); return; }
-    if (a.length !== 8) { hud.say(usage); return; }
-    if (a[7].toLowerCase() !== "block") { hud.say("使えるのは block だけです。" + usage); return; }
+    if (!isAdmin) { logSys("権限がありません(管理者だけが使えるコマンドです)"); return; }
+    if (a.length !== 8) { logSys(usage); return; }
+    if (a[7].toLowerCase() !== "block") { logSys("使えるのは block だけです。" + usage); return; }
     const p = controls.p, base = [Math.round(p.x), Math.floor(p.y + 0.5 + 1e-6), Math.round(p.z)];
     const c = [0, 1, 2, 3, 4, 5].map((i) => coord(a[i + 1], base[i % 3]));
-    if (c.some((v) => !Number.isFinite(v))) { hud.say("座標は整数か ~ で書いてください。" + usage); return; }
-    if (!net.ready()) { hud.say("オフラインのときは、使えません"); return; }
+    if (c.some((v) => !Number.isFinite(v))) { logSys("座標は整数か ~ で書いてください。" + usage); return; }
+    if (!net.ready()) { logSys("オフラインのときは、使えません"); return; }
     net.sendFill(c);
     return;
   }
-  hud.say("Unknown command: /" + cmd + "   (使えるコマンド: /fill)");
+  logSys("Unknown command: /" + cmd + "   (使えるコマンド: /fill)");
 }
-document.getElementById("cmdbar").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const line = cmdIn.value; closeCmd(); runCommand(line);
-});
+function submitCmd() {
+  const line = cmdIn.value.trim(); closeCmd();
+  if (!line) return;
+  if (line.startsWith("/")) { runCommand(line); return; }
+  if (!net.ready()) { logSys("オフラインのときは、チャットできません"); return; }
+  net.sendChat(line);
+}
+cmdBar.addEventListener("submit", (e) => { e.preventDefault(); submitCmd(); });
 cmdIn.addEventListener("keydown", (e) => {
   e.stopPropagation();
-  if (e.code === "Escape") { e.preventDefault(); closeCmd(); }
+  if (e.code === "Escape") { e.preventDefault(); closeCmd(); return; }
+  if (e.code === "Enter" && (e.isComposing || e.keyCode === 229)) e.preventDefault();   // 変換の確定のEnterでは、送らない
 });
 cmdIn.addEventListener("keyup", (e) => e.stopPropagation());
-cmdIn.addEventListener("input", () => { cmdIn.value = cmdIn.value.replace(/[^\x20-\x7e]/g, ""); if (!cmdIn.value.startsWith("/")) cmdIn.value = "/" + cmdIn.value; });
+cmdIn.addEventListener("input", () => {
+  if (cmdMode === "cmd") {
+    if (!cmdIn.value.startsWith("/")) { closeCmd(); return; }   // / を消したら、コマンドモードをやめる(なかったことに)
+    cmdIn.value = cmdIn.value.replace(/[^\x20-\x7e]/g, "");
+  }
+});
 
 let unlockedAt = 0;   // ロックが外れた時刻(そのEscでメニューをすぐ閉じてしまわないため)
 document.addEventListener("pointerlockchange", () => {
@@ -510,7 +566,8 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.target && e.target.tagName === "INPUT") return;   // 文字を入力している間は、操作キーを使わない
-  if (e.key === "/" && !panel && locked) { e.preventDefault(); openCmd(); return; }
+  if ((e.code === "Slash" && !e.shiftKey || e.key === "/") && !panel && locked) { e.preventDefault(); openCmd("cmd"); return; }
+  if (e.code === "KeyT" && !e.ctrlKey && !e.metaKey && !e.altKey && !panel && locked) { e.preventDefault(); openCmd("chat"); return; }
   if (e.code === "KeyE") {
     if (panel === "inventory") setPanel(null);
     else if (!panel && locked) setPanel("inventory");

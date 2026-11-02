@@ -175,3 +175,12 @@ body.touch .panel{touch-action:pan-y}
 #cmd{width:100%;height:34px;padding:0 10px;border:1px solid rgba(255,255,255,.7);border-radius:6px;background:rgba(0,0,0,.6);color:#fff;font:14px ui-monospace,Consolas,monospace;outline:none;user-select:text;-webkit-user-select:text}
 
 .setnum{width:64px;height:30px;padding:0 6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);text-align:right;user-select:text;-webkit-user-select:text}
+
+#chatlog{margin-top:6px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;max-width:min(420px,60vw)}
+.cl{padding:2px 8px;border-radius:4px;background:rgba(0,0,0,.38);color:#fff;font-size:13px;line-height:1.5;text-shadow:0 1px 2px rgba(0,0,0,.6);opacity:1;transition:opacity .6s;word-break:break-all}
+.cl.out{opacity:0}
+.cl b{color:#9fc2ff}.cl.cmd{color:#d8e8ff;font-family:ui-monospace,Consolas,monospace;font-size:12px}.cl.sys{color:#ffe9a8}
+#chathist{position:fixed;left:8px;bottom:48px;width:min(460px,92vw);max-height:38vh;overflow-y:auto;z-index:20;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,.5);color:#fff;font-size:13px;line-height:1.55;display:flex;flex-direction:column;gap:1px;user-select:text;-webkit-user-select:text}
+.hl{word-break:break-all}.hl b{color:#9fc2ff}.hl.cmd{color:#cfe3ff;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+#cmd.plain{-webkit-text-security:none;text-security:none}
+body.touch #chatlog .cl{font-size:11px}
