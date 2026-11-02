@@ -261,6 +261,7 @@ const net = new Net({
   onLeave: (id) => { remotes.remove(id); refreshOnline(); },
   onPos: (m) => remotes.setPos(m),
   onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
+  onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, BLOCK); hud.say(m.n + "ブロックをうめました"); },
   onSwing: (m) => remotes.swing(m.id),
   onHit: (m) => remotes.flash(m.id),
   onHurt: (m) => {   // 自分がやられた: 体力・ノックバック
@@ -315,13 +316,62 @@ function setPanel(name) {
   if (name) { exitLock(); hud.setResume(false); } else { ensureOnline(); requestLock(); hud.setResume(!locked); }
 }
 
+// ----- コマンド(/ で開く。左下に入力欄。英語だけ) -----
+let cmdOpen = false;
+const cmdBar = document.getElementById("cmdbar"), cmdIn = document.getElementById("cmd");
+function openCmd() {
+  if (cmdOpen || panel || !user) return;
+  cmdOpen = true; exitLock();
+  cmdBar.hidden = false; cmdIn.value = "/"; cmdIn.focus();
+  cmdIn.setSelectionRange(1, 1);
+}
+function closeCmd() {
+  if (!cmdOpen) return;
+  cmdOpen = false; cmdBar.hidden = true; cmdIn.blur();
+  if (!panel) requestLock();
+}
+// 数字、または ~(いまの位置)・~3(いまの位置から+3)
+function coord(tok, base) {
+  const m = /^~(-?\d+)?$/.exec(tok);
+  if (m) return base + (m[1] ? parseInt(m[1], 10) : 0);
+  return /^-?\d+$/.test(tok) ? parseInt(tok, 10) : NaN;
+}
+function runCommand(line) {
+  const a = line.trim().replace(/^\//, "").split(/\s+/).filter(Boolean);
+  if (!a.length) return;
+  const cmd = a[0].toLowerCase();
+  if (cmd === "fill") {
+    const usage = "Usage: /fill x1 y1 z1 x2 y2 z2 block   (~ = your position)";
+    if (!isAdmin) { hud.say("権限がありません(管理者だけが使えるコマンドです)"); return; }
+    if (a.length !== 8) { hud.say(usage); return; }
+    if (a[7].toLowerCase() !== "block") { hud.say("使えるのは block だけです。" + usage); return; }
+    const p = controls.p, base = [Math.round(p.x), Math.floor(p.y + 0.5 + 1e-6), Math.round(p.z)];
+    const c = [0, 1, 2, 3, 4, 5].map((i) => coord(a[i + 1], base[i % 3]));
+    if (c.some((v) => !Number.isFinite(v))) { hud.say("座標は整数か ~ で書いてください。" + usage); return; }
+    if (!net.ready()) { hud.say("オフラインのときは、使えません"); return; }
+    net.sendFill(c);
+    return;
+  }
+  hud.say("Unknown command: /" + cmd + "   (使えるコマンド: /fill)");
+}
+document.getElementById("cmdbar").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const line = cmdIn.value; closeCmd(); runCommand(line);
+});
+cmdIn.addEventListener("keydown", (e) => {
+  e.stopPropagation();
+  if (e.code === "Escape") { e.preventDefault(); closeCmd(); }
+});
+cmdIn.addEventListener("keyup", (e) => e.stopPropagation());
+cmdIn.addEventListener("input", () => { cmdIn.value = cmdIn.value.replace(/[^\x20-\x7e]/g, ""); if (!cmdIn.value.startsWith("/")) cmdIn.value = "/" + cmdIn.value; });
+
 let unlockedAt = 0;   // ロックが外れた時刻(そのEscでメニューをすぐ閉じてしまわないため)
 document.addEventListener("pointerlockchange", () => {
   locked = document.pointerLockElement === canvas;
   controls.locked = locked;
   if (!locked) { controls.release(); unlockedAt = performance.now(); }
   if (locked && panel) { panel = null; hud.show(null); }
-  if (!locked && !panel) setPanel("menu");
+  if (!locked && !panel && !cmdOpen) setPanel("menu");
   hud.setResume(!locked && !panel);
 });
 document.addEventListener("pointerlockerror", () => { if (!panel) hud.setResume(true); });
@@ -423,6 +473,7 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.target && e.target.tagName === "INPUT") return;   // 文字を入力している間は、操作キーを使わない
+  if (e.key === "/" && !panel && locked) { e.preventDefault(); openCmd(); return; }
   if (e.code === "KeyE") {
     if (panel === "inventory") setPanel(null);
     else if (!panel && locked) setPanel("inventory");

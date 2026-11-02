@@ -170,3 +170,6 @@ body.touch .panel{touch-action:pan-y}
 
 .gslot{display:flex;flex-direction:column;align-items:center;gap:8px;margin:6px 0 14px;min-height:44px}
 .pwbox{margin-top:4px}.pwbox summary{cursor:pointer;color:var(--muted);font-size:13px;margin-bottom:8px}
+
+#cmdbar{position:fixed;left:8px;bottom:8px;width:min(460px,92vw);z-index:20;margin:0}
+#cmd{width:100%;height:34px;padding:0 10px;border:1px solid rgba(255,255,255,.7);border-radius:6px;background:rgba(0,0,0,.6);color:#fff;font:14px ui-monospace,Consolas,monospace;outline:none;user-select:text;-webkit-user-select:text}
