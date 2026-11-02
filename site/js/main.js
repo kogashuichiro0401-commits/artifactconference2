@@ -208,16 +208,53 @@ hud = createHud({
   onLogout: async () => {
     await logout();
     net.stop(); netStarted = false; remotes.clear();
+    saveState(); stateUid = "";
     user = null; isAdmin = false; controls.canFly = false; if (touch) { touch.setAdmin(false); touch.setBuild(false); } buildMode = false; hud.setAdmin(false); hud.setBuildMode(false);
     netState = "idle"; refreshOnline();
     setPanel("login");
   },
 });
 
+// ----- 引きつぎ: 位置・向き・持っているもの・飛行・ズームなどを保存して、開き直したら続きから -----
+let stateUid = "";   // 復元が済んだ人(これが空のあいだは、保存しない)
+function stateKey(u) { return "craft-state:" + (u.uid || u.username || "x"); }
+function saveState() {
+  if (!stateUid || !user) return;
+  const p = controls.p;
+  const st = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly, zt: p.zt, sel: hud.selected(), plate: build.plateMode };
+  try { localStorage.setItem(stateKey(user), JSON.stringify(st)); } catch (e) { /* 保存できなくても動く */ }
+}
+function restoreState(u) {
+  let st = null;
+  try { st = JSON.parse(localStorage.getItem(stateKey(u)) || "null"); } catch (e) { st = null; }
+  const num = (v, lo, hi, d) => (Number.isFinite(v) && v >= lo && v <= hi ? v : d);
+  if (st && typeof st === "object") {
+    const p = controls.p;
+    p.x = num(st.x, -1, N, p.x); p.y = num(st.y, YMIN - 1, YMIN + YN + 1, p.y); p.z = num(st.z, -1, N, p.z);
+    p.yaw = num(st.yaw, -1000, 1000, p.yaw); p.pitch = num(st.pitch, -1.5707, 1.5707, p.pitch);
+    p.vx = p.vy = p.vz = 0; p.ground = false; p.glide = false; p.boost = 0; p.bodyYaw = p.yaw;
+    p.fly = !!st.fly && isAdmin;
+    p.zt = p.zm = num(st.zt, 1, 14, 1);
+    if (Number.isInteger(st.sel)) hud.select(st.sel);
+    if ([0, 1, 2].includes(st.plate)) build.plateMode = st.plate;
+    forceSend = true;
+  }
+  stateUid = u.uid || u.username || "x";
+}
+// 建築が反映されたあと、体がブロックの中に入っていたら、上に出す
+function unstick() {
+  const p = controls.p;
+  for (let i = 0; i < YN && controls.hits(p.x, p.y, p.z, controls.curH()); i++) p.y += 1;
+}
+window.addEventListener("pagehide", saveState);
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveState(); });
+setInterval(saveState, 1000);
+
 function signedIn(u) {
   user = u;
   isAdmin = u.role === "admin"; buildMode = isAdmin && uiPrefs.f4; controls.canFly = isAdmin; if (touch) { touch.setAdmin(isAdmin); touch.setBuild(buildMode); }
   hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(buildMode);
+  restoreState(u);
   setPanel("menu");
 }
 
@@ -287,6 +324,7 @@ const net = new Net({
     if (!isAdmin) { buildMode = false; hud.setBuildMode(false); }
     hud.setAdmin(isAdmin);
     for (const e of m.edits || []) world.set(e[0], e[1], e[2], e[3]);   // みんなが作った建築を反映
+    unstick();
     remotes.clear();
     for (const p of m.players) remotes.add(p);
     if (m.version !== VERSION) updateFound(m.version);   // 古い画面のまま遊んでいる
