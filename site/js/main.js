@@ -488,7 +488,15 @@ function runCommand(line) {
     net.sendFill(c);
     return;
   }
-  logSys("Unknown command: /" + cmd + "   (使えるコマンド: /fill)");
+  if (cmd === "data") {
+    const usage = "Usage: /data get pos";
+    if (a.length === 3 && a[1].toLowerCase() === "get" && a[2].toLowerCase() === "pos") {
+      const p = controls.p;   // いちばん近い整数(Yは、足があるブロックの高さ)
+      logSys(`${Math.round(p.x)} ${Math.round(p.y + 0.5)} ${Math.round(p.z)}`);
+    } else logSys(usage);
+    return;
+  }
+  logSys("Unknown command: /" + cmd + "   (使えるコマンド: /fill, /data)");
 }
 function submitCmd() {
   const line = cmdIn.value.trim(); closeCmd();
