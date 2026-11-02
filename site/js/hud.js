@@ -248,7 +248,8 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       $("update").hidden = false;
       $("update").textContent = `新しいバージョン (v${v}) があります。Escでメニューを開いて、再読み込みしてください`;
     },
-    toggleDebug: () => { $("debug").hidden = !$("debug").hidden; },
+    toggleDebug: () => { $("debug").hidden = !$("debug").hidden; return !$("debug").hidden; },
+    setDebugShown: (on) => { $("debug").hidden = !on; },
     setDebug: (text) => { if (!$("debug").hidden) $("debug").textContent = text; },
   };
 }

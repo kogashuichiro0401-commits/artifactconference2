@@ -141,6 +141,12 @@ const firstPerson = createFirstPerson(THREE, camera, scene, controls);
 const arrows = createArrows(THREE, scene, world, (a, b) => remotes.segHit(a, b), (id) => { if (net.ready()) net.sendHit(id, "arrow"); });
 const build = new BuildTool(THREE, scene, world);
 let isAdmin = false, buildMode = false;
+// F2〜F5の状態は、更新(再読み込み)しても引きつぐ(ブラウザに保存)
+const UKEY = "craft-ui";
+const uiPrefs = { f2: false, f3: false, f4: false, view: 0 };
+try { Object.assign(uiPrefs, JSON.parse(localStorage.getItem(UKEY) || "{}")); } catch (e) { /* 初期値 */ }
+function saveUi() { try { localStorage.setItem(UKEY, JSON.stringify(uiPrefs)); } catch (e) { /* 保存できなくても動く */ } }
+controls.p.view = [0, 1, 2].includes(uiPrefs.view) ? uiPrefs.view : 0;
 const me3d = createAvatar(THREE, "#c0392b");
 // 左上の「はたから見た自分」: 小さな別の場面に、もう一人の自分を置いて映す(画面の左上にだけ描く)
 const selfScene = new THREE.Scene();
@@ -210,8 +216,8 @@ hud = createHud({
 
 function signedIn(u) {
   user = u;
-  isAdmin = u.role === "admin"; buildMode = false; controls.canFly = isAdmin; if (touch) { touch.setAdmin(isAdmin); touch.setBuild(false); }
-  hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(false);
+  isAdmin = u.role === "admin"; buildMode = isAdmin && uiPrefs.f4; controls.canFly = isAdmin; if (touch) { touch.setAdmin(isAdmin); touch.setBuild(buildMode); }
+  hud.setUser(u); hud.setAdmin(isAdmin); hud.setBuildMode(buildMode);
   setPanel("menu");
 }
 
@@ -514,13 +520,14 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     if (!isAdmin) { hud.say("権限がありません(建築・破壊は管理者だけです)"); return; }
     buildMode = !buildMode; hud.setBuildMode(buildMode); if (touch) touch.setBuild(buildMode);
+    uiPrefs.f4 = buildMode; saveUi();
     hud.say(buildMode ? "建築破壊モード: 左クリック=壊す / 右クリック=置く" : "通常モード");
     return;
   }
   if (e.code === "KeyC" && !panel && locked && buildMode) { hud.say("プレートの置き方: " + build.cycleMode()); return; }
   if (e.code === "KeyR" && !panel && locked) { controls.respawn(); hud.say("スタート地点にもどりました"); return; }
-  if (e.code === "F2") { e.preventDefault(); chunkGrid.visible = !chunkGrid.visible; hud.say(chunkGrid.visible ? "16×16の区切りを表示(F2で消す)" : "区切りを消しました"); return; }
-  if (e.code === "F3") { e.preventDefault(); hud.toggleDebug(); return; }
+  if (e.code === "F2") { e.preventDefault(); chunkGrid.visible = !chunkGrid.visible; uiPrefs.f2 = chunkGrid.visible; saveUi(); hud.say(chunkGrid.visible ? "16×16の区切りを表示(F2で消す)" : "区切りを消しました"); return; }
+  if (e.code === "F3") { e.preventDefault(); uiPrefs.f3 = hud.toggleDebug(); saveUi(); return; }
   if (panel && panel !== "inventory") return;
   const m = /^Digit([1-9])$/.exec(e.code);
   if (m) hud.select(+m[1] - 1);
@@ -555,6 +562,8 @@ if (isTouch) {
   touch.setAdmin(isAdmin);
 }
 
+chunkGrid.visible = !!uiPrefs.f2; hud.setDebugShown(!!uiPrefs.f3);
+
 // ----- はじめ: 保存してあるログインを確かめる -----
 setPanel("login");
 restore().then((u) => {
@@ -573,6 +582,7 @@ function frame(t) {
   skyDome.position.copy(camera.position);
   sunSprite.position.set(camera.position.x + SUN[0] * 270, camera.position.y + SUN[1] * 270, camera.position.z + SUN[2] * 270);
   const p = controls.p;
+  if (uiPrefs.view !== p.view) { uiPrefs.view = p.view; saveUi(); }
   me3d.root.visible = p.view !== 0;
   if (p.view !== 0) {
     me3d.pose({ hs: controls.hs || 0, bodyYaw: p.bodyYaw, yaw: p.yaw, pitch: p.pitch, glide: p.glide, fly: p.fly, sneak: p.sneak, sprint: p.sprint, air: !p.ground, rocket: p.boost > 0, swing: controls.swingP }, dt);
