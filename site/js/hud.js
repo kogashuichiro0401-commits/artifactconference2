@@ -152,6 +152,9 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     $("li-user").onkeydown = (e) => e.stopPropagation();
   }
 
+  const setRow = (key, label, min, max, step, val, unit) =>
+    `<label>${label} <input type="range" id="set-${key}" min="${min}" max="${max}" step="${step}" value="${val}"><input type="number" class="setnum" id="setn-${key}" min="${min}" max="${max}" step="${step}" value="${val}" inputmode="decimal">${unit ? `<span>${unit}</span>` : ""}</label>`;
+
   // ----- メニュー -----
   function renderMenu() {
     const log = CHANGELOG.map((c) => `<li><b>${esc(c.at)}</b> v${esc(c.version)}<br>${esc(c.summary)}</li>`).join("");
@@ -167,8 +170,9 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       <button class="pill primary block" id="btn-enter">${entered ? "世界にもどる" : "世界に入る"}</button>
       <button class="pill block" id="btn-respawn">スタート地点にもどる (R)</button>
       <h2>設定</h2>
-      <label>視野角 <input type="range" id="set-fov" min="50" max="110" step="1" value="${settings.fov}"><span id="set-fov-v">${settings.fov}</span></label>
-      <label>マウス感度 <input type="range" id="set-sens" min="1" max="10" step="0.5" value="${settings.sens}"><span id="set-sens-v">${settings.sens}</span></label>
+      ${setRow("fov", "視野角", 50, 110, 1, settings.fov, "")}
+      ${setRow("sens", "マウス感度", 1, 10, 0.5, settings.sens, "")}
+      ${setRow("speed", "移動速度", 10, 500, 1, settings.speed, "%")}
       <div id="opsbox" hidden><h2>操作</h2>${keysTable}</div>
       <div id="logbox" hidden><h2>更新履歴</h2><ul class="log">${log}</ul></div>`;
     $("btn-ops").onclick = () => { const b = $("opsbox"); b.hidden = !b.hidden; if (!b.hidden) b.scrollIntoView({ block: "nearest" }); };
@@ -176,15 +180,18 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     $("btn-enter").onclick = () => { entered = true; onEnter(); };
     $("btn-logout").onclick = () => onLogout();
     $("btn-respawn").onclick = () => { onRespawn(); onEnter(); };
-    const bind = (id, key) => {
-      $(id).oninput = (e) => {
-        settings[key] = +e.target.value;
-        $(id + "-v").textContent = settings[key];
-        onSettings(settings);
-      };
+    // 設定は、スライダー(ドラッグ)でも、数字の入力でも変えられる
+    const bind = (key, min, max, step) => {
+      const r = $("set-" + key), n = $("setn-" + key);
+      const apply = (v) => { settings[key] = v; r.value = v; onSettings(settings); };
+      r.oninput = () => { n.value = r.value; apply(+r.value); };
+      n.oninput = () => { const v = parseFloat(n.value); if (Number.isFinite(v) && v >= min && v <= max) apply(v); };
+      n.onchange = () => { let v = parseFloat(n.value); if (!Number.isFinite(v)) v = settings[key]; v = Math.max(min, Math.min(max, Math.round(v / step) * step)); n.value = v; apply(v); };
+      n.onkeydown = (e) => e.stopPropagation();
     };
-    bind("set-fov", "fov");
-    bind("set-sens", "sens");
+    bind("fov", 50, 110, 1);
+    bind("sens", 1, 10, 0.5);
+    bind("speed", 10, 500, 1);
     if (updateVer) $("btn-reload").onclick = () => location.reload();
   }
 

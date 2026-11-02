@@ -17,6 +17,7 @@ export class Controls {
     this.cfg = { ely: true, rks: true, rkt: 2, rka: 30 };   // エリトラ / ロケット(あり・時間・加速度)
     this.keys = {};
     this.locked = false;
+    this.speedMul = 1;             // 移動速度の倍率(設定。1=100%)
     this.sens = 1;                 // 視点の感度(倍率)
     this.baseFov = 70;
     this.lastW = -1000; this.lastS = -1000; this.lastSp = -1000;
@@ -164,7 +165,7 @@ export class Controls {
     if (keys.ArrowUp) p.pitch = Math.min(1.5707, p.pitch + 1.5 * dt);
     if (keys.ArrowDown) p.pitch = Math.max(-1.5707, p.pitch - 1.5 * dt);
     if (!keys[this.sprintKey] || p.sneak) p.sprint = false;
-    const sp = p.fly ? (p.sprint ? 21 : 10.9) : p.sneak ? 1.31 : p.sprint ? 5.6 : 4.32;
+    const sp = (p.fly ? (p.sprint ? 21 : 10.9) : p.sneak ? 1.31 : p.sprint ? 5.6 : 4.32) * this.speedMul;
     const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
     const tx = (-sy * f + cy * s) * sp, tz = (-cy * f - sy * s) * sp;
     const rate = this.kbT > 0 ? 1.2 : p.ground ? 16 : p.fly ? 6 : 4, k = 1 - Math.exp(-rate * dt);

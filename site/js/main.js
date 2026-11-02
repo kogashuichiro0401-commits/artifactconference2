@@ -24,7 +24,7 @@ if (!THREE) {
 
 // ----- 設定(ブラウザに保存される) -----
 const SKEY = "craft-settings";
-const settings = { fov: 70, sens: 5 };
+const settings = { fov: 70, sens: 5, speed: 100 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SKEY) || "{}")); } catch (e) { /* 読めなければ初期値 */ }
 
 // ----- 3D表示: 白い床・青い空・平ら -----
@@ -172,6 +172,7 @@ scene.add(me3d.root);
 function applySettings() {
   controls.sens = settings.sens / 5;
   controls.baseFov = settings.fov;
+  controls.speedMul = Math.max(10, Math.min(500, +settings.speed || 100)) / 100;
 }
 applySettings();
 

@@ -115,7 +115,7 @@ export class World {
     const tMax = [0, 1, 2].map((a) => (d[a] === 0 ? Infinity : (idxs[a] + (step[a] > 0 ? 0.5 : -0.5) - o[a]) / d[a]));
     const tDelta = [0, 1, 2].map((a) => (d[a] === 0 ? Infinity : Math.abs(1 / d[a])));
     let t = 0, face = [0, 0, 0];
-    for (let n = 0; n < 40 && t <= reach; n++) {
+    for (let n = 0; n < 80 && t <= reach; n++) {
       const v = this.get(idxs[0], idxs[1], idxs[2]);
       if (v) {
         if (v & BLOCK) {

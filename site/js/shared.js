@@ -6,7 +6,7 @@ export const YN = 48;         // 縦のブロック数(YMIN 〜 YMIN+YN-1)。上
 export const BLOCK = 4096;    // セルの値: ブロックがある
 // セルの値: BLOCK ならブロック。そうでなければ下位12ビットが「プレート」の有無(0〜5=面、6〜11=斜め)
 export const NAME_MAX = 16;
-export const REACH = 6;       // 手の届く距離
+export const REACH = 12;      // 手の届く距離
 
 export const mod = (a, n) => ((a % n) + n) % n;
 export const defaultCell = (x, y, z) => (y === 1 ? BLOCK : 0);   // はじめは、y=1 に白い床(ブロック)だけ。立つと足は 1.5(ブロック座標は2)
