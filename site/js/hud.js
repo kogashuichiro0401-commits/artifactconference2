@@ -195,9 +195,18 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     if (updateVer) $("btn-reload").onclick = () => location.reload();
   }
 
+  // ログインを確認しているあいだは、ログインの入力欄を出さない(保存ずみログインで入れるときに、ブラウザがパスワードの更新をたずねてしまうため)
+  function showChecking() {
+    $("panel-login").innerHTML = `${brand("3D")}<p class="muted">ログインを確認中…</p>`;
+    for (const n of ["login", "menu", "inventory", "book"]) $("panel-" + n).hidden = n !== "login";
+    $("shade").hidden = false;
+    document.body.classList.add("ui", "login");
+  }
+
   // ----- パネルの切り替え -----
   function show(name) {
     if (name === "login") renderLogin();
+    if (name !== "login") $("panel-login").textContent = "";   // ログイン欄は残さない(ブラウザの「パスワードを更新しますか」を出さないため)
     if (name === "menu") renderMenu();
     if (name === "inventory") renderInventory();
     for (const n of ["login", "menu", "inventory", "book"]) $("panel-" + n).hidden = n !== name;
@@ -217,6 +226,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     selectedItem: () => inv[sel],
     show,
     renderLogin,
+    showChecking,
     // 管理者だけ、白いブロック・プレートを持てる
     setAdmin: (a) => { setItems(a); renderHotbar(); select(sel); },
     setBuildMode: (on) => { $("mode").hidden = !on; $("mode").textContent = "建築破壊モード(F4で切り替え)"; },

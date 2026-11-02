@@ -518,6 +518,7 @@ function openCmd(mode) {
 function closeCmd() {
   if (!cmdOpen) return;
   cmdOpen = false; cmdBar.hidden = true; histEl.hidden = true; cmdIn.blur(); cmdIn.value = "";
+  cmdIn.type = "text";   // 閉じたら、パスワード欄ではなくなる(ブラウザのパスワード保存を出さないため)
   if (!panel) requestLock();
 }
 // 数字、または ~(いまの位置)・~3(いまの位置から+3)
@@ -747,9 +748,10 @@ chunkGrid.visible = !!uiPrefs.f2; hud.setDebugShown(!!uiPrefs.f3);
 if (getToken()) { netStarted = true; net.start(); }
 
 // ----- はじめ: 保存してあるログインを確かめる -----
-setPanel("login");
+if (getToken()) hud.showChecking(); else setPanel("login");   // 保存ずみログインがあるあいだは、入力欄を出さずに確かめる
 restore().then((u) => {
   if (u) signedIn(u);
+  else if (u === null && getToken() === "") setPanel("login");
   else if (u === undefined) hud.renderLogin("artifact学会につながりません。しばらくしてからもう一度試してください。");
 });
 
