@@ -15,7 +15,7 @@ import { createButtons } from "./buttons.js";
 import { YMIN, YN, BLOCK, REACH, SPAWN, mod, SUN } from "./shared.js";
 import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
-import { createTouch, detectTouch } from "./touch.js";
+import { createTouch, detectTouch, switchInput } from "./touch.js";
 
 const THREE = window.THREE;
 const isTouch = detectTouch();   // スマホ・タブレット(?touch=1 でパソコンでも試せる)
@@ -196,6 +196,7 @@ let user = null;
 let netStarted = false;
 
 hud = createHud({
+  onInput: (mode) => { saveState(); switchInput(mode); },
   settings,
   onSettings: () => { applySettings(); try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (e) { /* 保存できなくても動く */ } },
   onEnter: () => { askNotify(); if (user) { if (isTouch) tryFullscreen(); setPanel(null); } },
@@ -622,6 +623,7 @@ function submitCmd() {
 }
 cmdIn.addEventListener("keydown", (e) => {
   e.stopPropagation();
+  if (e.code === "Escape" && isTouch && !panel) { saveState(); switchInput("pc"); return; }   // スマホの操作のときに Esc = キーボードがある → パソコンの操作に
   if (e.code === "Escape") { e.preventDefault(); closeCmd(); return; }
   if (e.code === "Enter" || e.code === "NumpadEnter") {
     e.preventDefault();

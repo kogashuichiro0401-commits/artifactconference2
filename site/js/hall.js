@@ -11,10 +11,11 @@ const W = 30, D = 30, ROWH = 30, Y0 = 0.5, PITCH = 33, FRONT = 40.5;   // 前面
 const THUMB = W * 9 / 16;          // サムネイルの高さ(16:9)
 const OPEN_Y = ROWH - THUMB;       // サムネイルの下のはし(床からの高さ)。ここから上だけ通れる
 const MAXN = 150;                  // 1つのホールに並べる数
-const CARD_W = 330, FS = 640;      // カードの幅(サイトのpx)/ 前面の絵の大きさ
+const CARD_W = 330, FS = 512;      // カードの幅(サイトのpx)/ 前面の絵の大きさ
 const PAGE_W = 1240, PAGE_H = 1150, PAGE_S = 1.5;   // 奥のページ(サイトのpx)
 const K = W / PAGE_W;              // ページの 1px が何ブロックか
-const NEAR = 170, FAR = 230;       // 前面の絵を作る / 捨てる 距離
+const NEAR = 120, FAR = 160;       // 前面の絵を作る / 捨てる 距離
+const TEX_PER_FRAME = 2, TEX_MAX = 48;   // 1フレームで作る数 / 同時に持つ数(重くならないように)
 const LIFT_SPEED = 8;
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
@@ -462,10 +463,23 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
       }
       ctl.riding = riding;
       gatherNear(p.x, p.y, p.z, 6);
-      // 前面の絵: 近いものだけ
+      // 前面の絵: 近いものから、少しずつ作る(一度にたくさん作ると、固まってしまう)
+      const cand = [];
+      let alive = 0;
       for (const H of halls) for (const it of H.items) {
-        const o = it.g.position, dist = Math.hypot(o.x - p.x, o.y + 15 - p.y, o.z - p.z);
-        if (dist < NEAR) ensureTex(it); else if (dist > FAR) freeTex(it);
+        const o = it.g.position; it.dist = Math.hypot(o.x - p.x, o.y + 15 - p.y, o.z - p.z);
+        if (it.cv) { if (it.dist > FAR) freeTex(it); else alive++; }
+        else if (it.dist < NEAR) cand.push(it);
+      }
+      cand.sort((a, b) => a.dist - b.dist);
+      for (let i = 0; i < cand.length && i < TEX_PER_FRAME; i++) {
+        if (alive >= TEX_MAX) {   // いっぱいなら、いちばん遠いものを捨てる
+          let far = null;
+          for (const H of halls) for (const it of H.items) if (it.cv && (!far || it.dist > far.dist)) far = it;
+          if (!far || far.dist <= cand[i].dist) break;
+          freeTex(far); alive--;
+        }
+        ensureTex(cand[i]); alive++;
       }
       const f = findFocus(p);
       if ((f || null) !== (focus ? focus.it : null)) {

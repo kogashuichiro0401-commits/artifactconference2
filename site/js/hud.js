@@ -41,7 +41,7 @@ const BOOK = `
     <li><b>1〜9</b>…手に持つものを変える。<b>E</b>…持ち物。<b>Esc</b>…メニュー</li>
   </ul>`;
 
-export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onLogout, onRespawn, onTouchEdit, onGoogleBtn }) {
+export function createHud({ onInput, settings, onSettings, onEnter, onClose, onLogin, onLogout, onRespawn, onTouchEdit, onGoogleBtn }) {
   const $ = (id) => document.getElementById(id);
   const inv = new Array(36).fill(null);   // 0〜8がホットバー
   inv[0] = "bow";
@@ -173,6 +173,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
       <div class="me-row"><span class="av">${av}</span><span class="nm">${esc(nm)}<span class="role">${user && user.role === "admin" ? "管理者" : "泳者"}</span></span><button class="pill" id="btn-logout">ログアウト</button></div>
       <button class="pill primary block" id="btn-enter"${loading ? " disabled" : ""}>${loading ? "ワールドと前回の続きを読み込み中…" : entered ? "世界にもどる" : "世界に入る"}</button>
       <button class="pill block" id="btn-respawn">スタート地点にもどる (R)</button>
+      <button class="pill block" id="btn-input">${document.body.classList.contains("touch") ? "パソコンの操作にする(マウス・キーボード)" : "スマホの操作にする(タッチ)"}</button>
       <h2>設定</h2>
       ${setRow("fov", "視野角", 50, 110, 1, settings.fov, "")}
       ${setRow("sens", "マウス感度", 1, 10, 0.5, settings.sens, "")}
@@ -183,6 +184,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     $("btn-log").onclick = () => { const b = $("logbox"); b.hidden = !b.hidden; if (!b.hidden) b.scrollIntoView({ block: "nearest" }); };
     $("btn-enter").onclick = () => { entered = true; onEnter(); };
     $("btn-logout").onclick = () => onLogout();
+    $("btn-input").onclick = () => onInput(document.body.classList.contains("touch") ? "pc" : "touch");
     $("btn-respawn").onclick = () => { if (loading) return; onRespawn(); onEnter(); };
     // 設定は、スライダー(ドラッグ)でも、数字の入力でも変えられる
     const bind = (key, min, max, step) => {

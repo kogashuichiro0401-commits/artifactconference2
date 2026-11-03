@@ -11,11 +11,27 @@ const LONG_MS = 380, MOVE_PX = 10;
 const ARROW = (rot) => `<svg viewBox="0 0 24 24" width="26" height="26" style="transform:rotate(${rot}deg)"><path d="M12 6 L19 17 H5 Z" fill="rgba(255,255,255,.92)" stroke="rgba(0,0,0,.45)" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
 const HAND = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5a1.6 1.6 0 0 1 3.2 0v5"/><path d="M12.2 9.5a1.6 1.6 0 0 1 3.2 0V11"/><path d="M15.4 10.5a1.6 1.6 0 0 1 3.2 0V15a6 6 0 0 1-6 6h-1.2a6 6 0 0 1-4.6-2.1L4 15.6a1.6 1.6 0 0 1 2.4-2.1L9 15.5"/></svg>`;
 
+// 操作のしかた: スマホ(タッチ) か パソコン(マウス・キーボード)。
+//  ?touch=1 / ?touch=0 か、メニューで選んだもの(保存)が優先。なければ、マウスがある端末はパソコンにする
+export const INPUT_KEY = "craft-input";
 export function detectTouch() {
   try {
     if (/[?&]touch=1/.test(location.search)) return true;
-    return ("ontouchstart" in window || navigator.maxTouchPoints > 0) && window.matchMedia("(pointer:coarse)").matches;
+    if (/[?&]touch=0/.test(location.search)) return false;
+    let saved = null;
+    try { saved = localStorage.getItem(INPUT_KEY); } catch (e) { /* 保存できない */ }
+    if (saved === "pc") return false;
+    if (saved === "touch") return true;
+    const mm = (q) => window.matchMedia(q).matches;
+    if (mm("(any-pointer: fine)") || mm("(any-hover: hover)")) return false;   // マウス・タッチパッドがある
+    return ("ontouchstart" in window || navigator.maxTouchPoints > 0) && mm("(pointer: coarse)");
   } catch (e) { return false; }
+}
+// 操作のしかたを変えて、読みこみなおす(いまの場所などは保存してある)
+export function switchInput(mode) {
+  try { localStorage.setItem(INPUT_KEY, mode); } catch (e) { /* 保存できない */ }
+  const u = new URL(location.href); u.searchParams.delete("touch");
+  location.replace(u.toString());
 }
 
 export function createTouch(o) {
