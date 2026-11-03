@@ -24,44 +24,29 @@ function rich(text) {   // ハッシュタグ・URL を青く
   return esc(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/(^|[\s])(#[^\s#<]+)/g, '$1<span class="hashtag">$2</span>');
 }
 
-export function createWindows({ api, getToken, halls, say, onOpen, goInto, getMe }) {
-  const root = document.getElementById("wins");
+export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d }) {
   const open = [], closed = [];
-  let z = 10;
-  function show(w) {
-    w.el.hidden = false; w.el.style.zIndex = ++z;
-    root.appendChild(w.el);
-    open.push(w);
-    onOpen();
-  }
-  // ウィンドウを作る。build(body, w) で中身を入れる
+  // ウィンドウを作る(講義がちる。と同じ形: 見出し + 最小化 + 閉じる)。build(body, w) で中身を入れる
   function make(title, build, o = {}) {
     const el = document.createElement("section");
-    el.className = "gwin" + (o.wide ? " wide" : "");
-    const n = open.length;
-    el.style.left = `calc(50% - ${(o.wide ? 330 : 270)}px + ${(n % 6) * 26}px)`;
-    el.style.top = `${70 + (n % 6) * 26}px`;
-    el.innerHTML = `<header class="gwin-h"><h2>${esc(title)}</h2><button class="gwin-x" type="button" aria-label="閉じる" title="閉じる(Shift+→)">${ico("close", 20)}</button></header><div class="gwin-b"></div>`;
-    const w = { el, title, body: el.querySelector(".gwin-b") };
-    el.querySelector(".gwin-x").onclick = () => close(w);
-    el.addEventListener("mousedown", () => { el.style.zIndex = ++z; const i = open.indexOf(w); if (i >= 0) { open.splice(i, 1); open.push(w); } });
-    // 見出しをドラッグで動かせる
-    const hd = el.querySelector(".gwin-h");
-    hd.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button")) return;
-      const sx = e.clientX, sy = e.clientY, r = el.getBoundingClientRect();
-      const mv = (ev) => { el.style.left = r.left + ev.clientX - sx + "px"; el.style.top = Math.max(0, r.top + ev.clientY - sy) + "px"; };
-      const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
-      window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
-    });
+    el.className = "pop" + (o.wide ? " wide" : "");
+    el.innerHTML = `<div class="pop-h"><b>${esc(title)}</b><button type="button" class="pop-m" aria-label="最小化" title="最小化">–</button><button type="button" class="pop-x" aria-label="閉じる" title="閉じる(Shift+→)">×</button></div><div class="pop-b"></div>`;
+    const w = { el, title, body: el.querySelector(".pop-b") };
+    el.querySelector(".pop-x").onclick = () => close(w);
+    el.querySelector(".pop-m").onclick = () => el.classList.toggle("min");
     build(w.body, w);
     show(w);
     return w;
   }
+  function show(w) {
+    document.body.appendChild(w.el);   // 大きさを測るため、いったんふつうに置く
+    win3d.adopt(w.el);
+    open.push(w);
+  }
   function close(w) {
     const i = open.indexOf(w);
     if (i < 0) return;
-    open.splice(i, 1); w.el.remove();
+    open.splice(i, 1); win3d.remove(w.el); w.el.remove();
     closed.push(w); if (closed.length > 20) closed.shift();
   }
   const api2 = (action, body) => api(Object.assign({ action, token: getToken() }, body || {}));
@@ -182,18 +167,20 @@ export function createWindows({ api, getToken, halls, say, onOpen, goInto, getMe
         <label class="field"><span>URL</span><input type="url" name="url" placeholder="https://claude.ai/artifact/…" required></label>
         <label class="field"><span>タイトル<small>空なら、URLのページから自動で入ります</small></span><input type="text" name="title" maxlength="60"></label>
         <label class="field"><span>説明</span><textarea name="desc" maxlength="2000"></textarea></label>
-        <label class="field"><span>カテゴリ</span><select name="cat">${cats.map((c) => `<option>${esc(c)}</option>`).join("")}</select></label>
-        <label class="field"><span>公開設定</span><select name="vis"><option value="public">公開</option><option value="private">非公開(自分だけ)</option></select></label>
+        <div class="field"><span>カテゴリ</span><div class="chips wrap" data-g="cat">${cats.map((c, i) => `<button class="chip" type="button" data-v="${esc(c)}" aria-pressed="${i === 0}">${esc(c)}</button>`).join("")}</div></div>
+        <div class="field"><span>公開設定</span><div class="seg" data-g="vis"><button class="btn act" type="button" data-v="public" aria-pressed="true">公開</button><button class="btn act" type="button" data-v="private" aria-pressed="false">非公開(自分だけ)</button></div></div>
         <p class="err"></p><div class="dlg-acts"><button class="btn primary" type="submit">投稿する</button></div></form>`;
       let kind = "artifact";
       const f = b.querySelector("form"), er = f.querySelector(".err");
+      const pick = (g) => { const x = f.querySelector(`[data-g=${g}] [aria-pressed=true]`); return x ? x.dataset.v : ""; };
+      f.querySelectorAll("[data-g] [data-v]").forEach((x) => { x.onclick = () => { x.parentNode.querySelectorAll("[data-v]").forEach((y) => y.setAttribute("aria-pressed", String(y === x))); }; });
       f.querySelectorAll("[data-k]").forEach((x) => { x.onclick = () => { kind = x.dataset.k; f.querySelectorAll("[data-k]").forEach((y) => y.setAttribute("aria-pressed", String(y === x))); f.url.placeholder = kind === "artifact" ? "https://claude.ai/artifact/…" : "https://…"; }; });
       f.onsubmit = async (e) => {
         e.preventDefault();
         const url = f.url.value.trim();
         if (!url) { er.textContent = "URLを入れてください。"; f.url.focus(); return; }
         const bt = f.querySelector("[type=submit]"); bt.disabled = true; er.textContent = "";
-        const r = await api2("createPost", { kind, url, title: f.title.value, desc: f.desc.value, cat: f.cat.value, visibility: f.vis.value });
+        const r = await api2("createPost", { kind, url, title: f.title.value, desc: f.desc.value, cat: pick("cat"), visibility: pick("vis") });
         bt.disabled = false;
         if (!r || !r.ok) { er.textContent = (r && r.message) || "投稿できませんでした。"; return; }
         say("投稿しました"); halls.refreshSoon(); close(w);
@@ -233,7 +220,7 @@ export function createWindows({ api, getToken, halls, say, onOpen, goInto, getMe
     get count() { return open.length; },
     // Shift+→: いちばん新しいウィンドウを消す / Shift+←: 消したものをもどす
     closeTop() { const w = open[open.length - 1]; if (w) close(w); return !!w; },
-    restore() { const w = closed.pop(); if (w) show(w); return !!w; },
+    restore() { const w = closed.pop(); if (w) { w.el.classList.remove("min"); show(w); } return !!w; },
     closeAll() { while (open.length) close(open[open.length - 1]); },
   };
 }

@@ -79,6 +79,10 @@ export class Controls {
 
   key(e, down) {
     const code = e.code, p = this.p;
+    // ウィンドウの入力欄で文字を書いている間は、Alt といっしょに押したときだけ、操作のキーになる(講義がちる。と同じ)
+    const typing = e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName);
+    if (typing && down && !e.altKey) return;
+    if (typing && down && e.altKey && GAME.has(code)) e.preventDefault();
     if (!this.locked && down) return;
     if (GAME.has(code) && this.locked) e.preventDefault();
     if (code === "ShiftLeft" || code === "ShiftRight") {

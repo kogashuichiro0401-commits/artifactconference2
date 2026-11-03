@@ -13,6 +13,7 @@ import { Marks } from "./marks.js";
 import { createHalls } from "./hall.js";
 import { createButtons } from "./buttons.js";
 import { createWindows } from "./windows.js";
+import { createWin3D } from "./win3d.js";
 import { YMIN, YN, BLOCK, REACH, SPAWN, mod, SUN } from "./shared.js";
 import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
@@ -146,12 +147,12 @@ const halls = createHalls(THREE, scene, {
   ui: new Proxy({}, { get: (_, k) => (...a) => wins[k](...a) }),
 });
 // ウィンドウ。出たら、カーソルを出して操作できるようにする(画面をクリックすると、ゲームにもどる。ウィンドウは残る)
-let skipMenu = false;
-const wins = createWindows({
+// ウィンドウは「講義がちる。」と同じく、3Dの世界に立てる(十字がカーソル)
+const win3d = createWin3D(THREE, camera, controls, (t) => hud && hud.say(t));
+const wins = createWindows({ win3d,
   api: siteApi, getToken, halls, getMe: () => (user ? { uid: user.uid, name: user.displayName || user.username || "" } : null),
   say: (t) => hud && hud.say(t),
   goInto: (id) => { halls.goInto(id, controls); requestLock(); },
-  onOpen: () => { if (locked && !isTouch) { skipMenu = true; exitLock(); } },
 });
 world.virtual = halls.collider;
 Object.defineProperty(world, "voidY", { get: () => halls.voidY });
@@ -678,7 +679,6 @@ document.addEventListener("pointerlockchange", () => {
   controls.locked = locked;
   if (!locked) { controls.release(); unlockedAt = performance.now(); }
   if (locked && panel) { panel = null; hud.show(null); }
-  if (!locked && skipMenu) { skipMenu = false; hud.setResume(false); return; }   // ウィンドウを出すために、カーソルを出しただけ
   if (!locked && !panel && !cmdOpen) setPanel("menu");
   hud.setResume(!locked && !panel);
 });
@@ -810,6 +810,7 @@ window.addEventListener("mousedown", (e) => {
     if (it === "bow") { startCharge(); return; }
     if (isAdmin && (buildMode || holdingMark())) { buildClick(2); return; }
     if (it === "book") useItem();
+  } else if (e.button === 0 && win3d.click()) { swingHand();   // ウィンドウ(十字がカーソル)
   } else if (e.button === 0 && !glide) {   // 左クリック: 壊す(建築モード) / なぐる
     if (!buildMode && tryBreakMark()) swingHand();
     else if (buildMode && isAdmin) buildClick(0);   // 建築破壊モードでは、建築・破壊だけ
@@ -820,6 +821,9 @@ window.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("wheel", (e) => {
   if (!locked || panel) return;
   e.preventDefault();
+  if (win3d.wheel(e)) return;   // ウィンドウ: スクロール / 置く前なら、近く・遠く
+  const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
+  if (halls.wheelPage(eye, L, e.deltaY * (e.deltaMode === 1 ? 16 : 1))) return;   // 箱の奥のページ: スクロール
   controls.wheel(e);
 }, { passive: false });
 
@@ -831,6 +835,7 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;   // 文字を入力している間は、操作キーを使わない
+  if ((e.code === "Enter" || e.code === "NumpadEnter") && win3d.previewing) { e.preventDefault(); win3d.fixAll(); return; }   // ウィンドウを置く
   if (e.shiftKey && (e.code === "ArrowRight" || e.code === "ArrowLeft")) {   // ウィンドウ: Shift+→ 消す / Shift+← もどす
     e.preventDefault();
     if (e.code === "ArrowRight") wins.closeTop(); else wins.restore();
@@ -882,7 +887,7 @@ if (isTouch) {
     isBow: () => hud.selectedItem() === "bow",
     bowDown: () => startCharge(),
     bowUp: (cancel) => { if (cancel) cancelCharge(); else releaseBow(); },
-    tap: () => { if (isAdmin && (buildMode || holdingMark())) buildClick(2); else if (!buildMode && clickButton()) swingHand(); else attack(); },
+    tap: () => { if (win3d.click()) { swingHand(); return; } if (isAdmin && (buildMode || holdingMark())) buildClick(2); else if (!buildMode && clickButton()) swingHand(); else attack(); },
     longPress: () => { if (!buildMode && tryBreakMark()) swingHand(); else if (buildMode && isAdmin) buildClick(0); else useItem(); },
     menu: () => { if (panel === "menu") setPanel(null); else if (!panel) setPanel("menu"); else setPanel(null); },
     key: (code) => {   // 画面上のキーのボタン: 本物のキーを押したのと同じにする
@@ -942,6 +947,7 @@ function frame(t) {
   else build.update(eye, dirv, isAdmin && (buildMode || holdingMark()), holdingMark() ? "block" : hud.selectedItem(), [p.x - 0.3, p.y, p.z - 0.3, p.x + 0.3, p.y + controls.curH(), p.z + 0.3]);
   const kmh = Math.hypot(p.vx, p.vy, p.vz) * 3;
   renderer.render(scene, camera);
+  win3d.update();
   if (!panel) { renderSelf(p, dt); map3d.render(p, camera.fov, renderer); }
   sendPose(t);
 
@@ -973,5 +979,5 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { halls, buttons, clickButton, runCommand, marks, arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
+window.__craft = { win3d, wins, halls, buttons, clickButton, runCommand, marks, arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });

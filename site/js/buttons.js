@@ -66,8 +66,15 @@ export function createButtons(THREE) {
   function meshes() { const out = []; for (const b of list) if (isShown(b.g)) out.push(b.body, b.face); return out; }
   function owner(m) { return list.find((b) => b.body === m || b.face === m); }
 
+  // 台(角の丸い板)。並べ替えのボタンが、この上にしずみこむ(サイトの .seg と同じ形)
+  function base(parent, x, y, z, w, h) {
+    const geo = new THREE.ExtrudeGeometry(shapeOf(THREE, w, h, true, true), { depth: 0.12, bevelEnabled: false, curveSegments: 12 });
+    geo.translate(0, 0, -0.12);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xc9c9c9 }));
+    m.position.set(x, y, z); parent.add(m); return m;
+  }
   return {
-    add, press,
+    add, press, base,
     pick(eye, dir, maxT) {
       ray.set(new THREE.Vector3(eye[0], eye[1], eye[2]), new THREE.Vector3(dir[0], dir[1], dir[2]));
       ray.near = 0; ray.far = maxT;

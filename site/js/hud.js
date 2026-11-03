@@ -119,7 +119,7 @@ export function createHud({ onInput, settings, onSettings, onEnter, onClose, onL
   // ----- ログイン -----
   const FILE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>`;
   const MOUSE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="6"/><path d="M12 2.5v7M6 9.5h12"/></svg>`;
-  const brand = (sub, file) => `<div class="brand"><span>artifact学会<b>。</b></span><small>${esc(sub)}</small>${file ? `<button class="filebtn" id="btn-ops" title="操作" aria-label="操作">${MOUSE_ICON}操作</button>` : ""}${file ? `<button class="filebtn" id="btn-log" title="更新履歴" aria-label="更新履歴">${FILE_ICON}更新履歴</button>` : ""}</div>`;
+  const brand = (sub, file) => `<div class="brand"><span class="logo-mark" aria-hidden="true">学</span><span>artifact学会<b>。</b></span><small>${esc(sub)}</small>${file ? `<button class="filebtn" id="btn-ops" title="操作" aria-label="操作">${MOUSE_ICON}操作</button>` : ""}${file ? `<button class="filebtn" id="btn-log" title="更新履歴" aria-label="更新履歴">${FILE_ICON}更新履歴</button>` : ""}</div>`;
   const K = (...k) => k.map((x) => `<kbd>${x}</kbd>`).join(" ");
   const KEYS = [
     ["移動", ["歩く", K("W", "A", "S", "D")], ["ダッシュ", K("W") + " か " + K("S") + " を2回"], ["しゃがむ", K("Shift")]],

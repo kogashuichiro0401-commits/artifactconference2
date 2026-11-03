@@ -192,35 +192,38 @@ body.touch #chatlog .cl{font-size:11px}
 
 #chatlog .cl:first-child{border-radius:4px 4px 0 0}#chatlog .cl:last-child{border-radius:0 0 4px 4px}#chatlog .cl:only-child{border-radius:4px}
 
-/* ===== ウィンドウ(artifact学会。のダイアログと同じ見た目。色はいつも明るいほう) ===== */
-#wins{position:fixed;inset:0;pointer-events:none;z-index:60}
-.gwin{--bg:#ffffff;--surface:#f2f2f2;--surface-2:#e3e3e3;--fg:#0f0f0f;--muted:#5f5f5f;--line:#dcdcdc;--accent:#1f4e9e;--accent-fg:#ffffff;--accent-soft:#e6edf8;
-  position:fixed;width:540px;max-width:calc(100vw - 32px);max-height:calc(100vh - 120px);display:flex;flex-direction:column;pointer-events:auto;
-  background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.35);user-select:text;-webkit-user-select:text;color-scheme:light}
-.gwin.wide{width:660px}
-.gwin-h{display:flex;align-items:center;gap:8px;padding:14px 14px 6px 24px;cursor:move}
-.gwin-h h2{margin:0;flex:1;font-size:20px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gwin-x{width:40px;height:40px;border:0;border-radius:50%;background:none;color:var(--fg);display:flex;align-items:center;justify-content:center;cursor:pointer}
-.gwin-x:hover{background:var(--surface-2)}
-.gwin-b{padding:6px 24px 24px;overflow:auto}
-.gwin .lead{margin:0 0 16px;color:var(--muted);font-size:13px}
-.gwin .sub{display:block;color:var(--muted);font-size:13px;line-height:1.55}
-.gwin .err{color:var(--danger,#b3261e);font-size:13px;min-height:1em;margin:4px 0}
-.gwin .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 20px;border-radius:22px;border:0;background:var(--surface);font-weight:700;text-decoration:none;color:var(--fg);cursor:pointer;font:inherit;font-weight:700}
-.gwin .btn:hover{background:var(--surface-2)}
-.gwin .btn.primary{background:var(--accent);color:var(--accent-fg)}
-.gwin .btn[disabled]{opacity:.55}
-.gwin .seg{display:inline-flex;border-radius:22px;background:var(--surface);overflow:hidden}
-.gwin .seg .btn{border-radius:0;background:none;padding:0 16px}
-.gwin .seg .btn+.btn{border-left:1px solid var(--line)}
-.gwin .seg .btn[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
-.gwin .dlg-acts{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:8px}
-.gwin .field{display:block;margin-bottom:16px}
-.gwin .field>span{display:block;font-weight:700;font-size:13px;margin-bottom:6px}
-.gwin .field small{display:block;color:var(--muted);font-size:12px;margin-top:2px;font-weight:400}
-.gwin input[type=url],.gwin input[type=text],.gwin select,.gwin textarea{width:100%;box-sizing:border-box;min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:10px 12px;font:inherit;font-size:16px}
-.gwin textarea{min-height:92px;resize:vertical}
-.gwin .av{width:36px;height:36px;border-radius:50%;color:#fff;font-weight:700;font-size:15px;line-height:1;background:#888}
+/* ===== ウィンドウ(「講義がちる。」と同じ形。中身は artifact学会。の見た目。色はいつも明るいほう) ===== */
+.pop{--bg:#ffffff;--surface:#f2f2f2;--surface-2:#e3e3e3;--fg:#0f0f0f;--muted:#5f5f5f;--line:#dcdcdc;--accent:#1f4e9e;--accent-fg:#ffffff;--accent-soft:#e6edf8;--wline:#d3dae4;--waccent:#2f55c8;--waccent-soft:#e4eafb;
+  position:absolute;width:420px;min-width:260px;max-height:560px;display:flex;flex-direction:column;background:#fff;color:var(--fg);border:1px solid var(--wline);border-radius:12px;overflow:hidden;
+  font-family:var(--font);font-size:15px;line-height:1.6;user-select:text;-webkit-user-select:text;color-scheme:light;backface-visibility:visible}
+.pop.wide{width:560px}
+.pop-h{display:flex;align-items:center;gap:8px;padding:7px 8px 7px 14px;border-bottom:1px solid var(--wline);flex:none;cursor:move}
+.pop-h b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;font-size:13px;color:var(--waccent)}
+.pop-h button{border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;padding:2px 7px;border-radius:6px;color:var(--fg)}
+.pop-h button:hover{background:var(--waccent-soft)}
+.pop-b{padding:12px 16px 16px;overflow:auto;flex:1;min-height:50px}
+.pop.min{height:auto!important;width:220px!important;min-width:0}
+.pop.min .pop-b{display:none}
+.pop.min .pop-h{border-bottom:0}
+.pv-ban{position:fixed;left:50%;top:14px;transform:translateX(-50%);padding:8px 16px;border-radius:10px;background:rgba(47,95,208,.92);color:#fff;font:600 14px/1.4 var(--font);pointer-events:none;z-index:30;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.pop .lead{margin:0 0 16px;color:var(--muted);font-size:13px}
+.pop .sub{display:block;color:var(--muted);font-size:13px;line-height:1.55}
+.pop .err{color:var(--danger,#b3261e);font-size:13px;min-height:1em;margin:4px 0}
+.pop .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 20px;border-radius:22px;border:0;background:var(--surface);font-weight:700;text-decoration:none;color:var(--fg);cursor:pointer;font:inherit;font-weight:700}
+.pop .btn:hover{background:var(--surface-2)}
+.pop .btn.primary{background:var(--accent);color:var(--accent-fg)}
+.pop .btn[disabled]{opacity:.55}
+.pop .seg{display:inline-flex;border-radius:22px;background:var(--surface);overflow:hidden}
+.pop .seg .btn{border-radius:0;background:none;padding:0 16px}
+.pop .seg .btn+.btn{border-left:1px solid var(--line)}
+.pop .seg .btn[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+.pop .dlg-acts{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:8px}
+.pop .field{display:block;margin-bottom:16px}
+.pop .field>span{display:block;font-weight:700;font-size:13px;margin-bottom:6px}
+.pop .field small{display:block;color:var(--muted);font-size:12px;margin-top:2px;font-weight:400}
+.pop input[type=url],.pop input[type=text],.pop select,.pop textarea{width:100%;box-sizing:border-box;min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:10px 12px;font:inherit;font-size:16px}
+.pop textarea{min-height:92px;resize:vertical}
+.pop .av{width:36px;height:36px;border-radius:50%;color:#fff;font-weight:700;font-size:15px;line-height:1;background:#888}
 .gmenu{display:flex;flex-direction:column}
 .gmenu button{display:flex;align-items:center;gap:14px;min-height:48px;padding:0 12px;border:0;border-radius:10px;background:none;color:var(--fg);font:inherit;text-align:left;cursor:pointer}
 .gmenu button:hover{background:var(--surface)}
@@ -229,6 +232,7 @@ body.touch #chatlog .cl{font-size:11px}
 .an-n{font-size:24px;font-weight:900}
 .share-row{display:flex;gap:8px}
 .chips{display:flex;gap:10px;padding:12px 0}
+.chips.wrap{flex-wrap:wrap;padding:0;gap:8px}
 .chip{height:36px;padding:0 14px;border-radius:8px;border:0;background:var(--surface);font:inherit;font-weight:500;color:var(--fg);cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
 .ch-head{display:flex;align-items:center;gap:16px}
@@ -240,20 +244,23 @@ body.touch #chatlog .cl{font-size:11px}
 .ch-t{display:flex;flex-direction:column;gap:2px;min-width:0}
 .ch-t .ttl{font-weight:500;font-size:15px;line-height:1.5}
 .ch-go{color:var(--accent)!important}
-.gwin .tw{display:flex;gap:12px;padding:12px 8px;border-bottom:1px solid var(--line);border-radius:10px;cursor:pointer}
-.gwin .tw:hover{background:var(--surface)}
-.gwin .tw.detail{cursor:default}.gwin .tw.detail:hover{background:none}
-.gwin .tw-body{min-width:0;flex:1}
-.gwin .tw-label{font-size:12px;color:var(--muted);margin-bottom:2px}
-.gwin .tw-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;font-size:14px}
-.gwin .tw-head .sub{display:inline}
-.gwin .tw-name{font-weight:700}
-.gwin .tw-text{margin-top:4px;font-size:15px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
-.gwin .tw-text a,.gwin .hashtag{color:#1d6fd8;font-weight:700;text-decoration:none}
-.gwin .tw-acts{display:flex;gap:6px 22px;margin-top:8px;flex-wrap:wrap}
-.gwin .tw-act{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
-.gwin .tw-tools{display:flex;align-items:center;margin:12px 0 4px}
-.gwin .tw-comp{margin-top:12px}
+.pop .tw{display:flex;gap:12px;padding:12px 8px;border-bottom:1px solid var(--line);border-radius:10px;cursor:pointer}
+.pop .tw:hover{background:var(--surface)}
+.pop .tw.detail{cursor:default}.pop .tw.detail:hover{background:none}
+.pop .tw-body{min-width:0;flex:1}
+.pop .tw-label{font-size:12px;color:var(--muted);margin-bottom:2px}
+.pop .tw-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;font-size:14px}
+.pop .tw-head .sub{display:inline}
+.pop .tw-name{font-weight:700}
+.pop .tw-text{margin-top:4px;font-size:15px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.pop .tw-text a,.pop .hashtag{color:#1d6fd8;font-weight:700;text-decoration:none}
+.pop .tw-acts{display:flex;gap:6px 22px;margin-top:8px;flex-wrap:wrap}
+.pop .tw-act{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.pop .tw-tools{display:flex;align-items:center;margin:12px 0 4px}
+.pop .tw-comp{margin-top:12px}
 .files{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
 .file-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--surface)}
 .file-row .fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ロゴ: 本家のロゴ(青地に白の「学」)の、青白反転 */
+.logo-mark{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:#fff;color:#1f4e9e;border:1.5px solid #1f4e9e;font-size:18px;font-weight:700;line-height:1;flex:none}

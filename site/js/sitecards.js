@@ -433,7 +433,8 @@ export function drawTweetItem(c, t, info, x0, y0, W, S) {
   let h = padY + (info.label ? 12 * 1.6 + 2 : 0) + 22 + (text ? 4 + shown.length * lh : 0) + (clamp ? 4 + 14 * 1.6 + 4 : 0) + (info.image ? 8 + tw * 9 / 16 : 0) + 8 + 26 + padY;
   if (!draw) return h;
   // 背景(固定ツイート・選んでいるもの)
-  if (info.sel) { c.fillStyle = C.accentSoft; rr(c, x0 * S, y0 * S, W * S, h * S, 10 * S); c.fill(); }
+  if (info.noLine) { /* 角の丸いカードは、外で描く */ }
+  else if (info.sel) { c.fillStyle = C.accentSoft; rr(c, x0 * S, y0 * S, W * S, h * S, 10 * S); c.fill(); }
   else { c.strokeStyle = C.line; c.lineWidth = S; c.beginPath(); c.moveTo(x0 * S, (y0 + h) * S); c.lineTo((x0 + W) * S, (y0 + h) * S); c.stroke(); }
   drawAvatar(c, x * S, y * S, 36 * S, info.name, t.uid, info.avatar);
   if (info.label) {
