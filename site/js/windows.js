@@ -24,14 +24,18 @@ function rich(text) {   // ハッシュタグ・URL を青く
   return esc(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/(^|[\s])(#[^\s#<]+)/g, '$1<span class="hashtag">$2</span>');
 }
 
-export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d }) {
+export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d, send }) {
   const open = [], closed = [];
+  let ctx = null;          // いま作っているウィンドウの種類 { kind, arg, remote, owner, wid, pose }
+  const remotes = new Map();   // ほかの人のウィンドウ: "人id:wid" → w
   // ウィンドウを作る(講義がちる。と同じ形: 見出し + 最小化 + 閉じる)。build(body, w) で中身を入れる
   function make(title, build, o = {}) {
     const el = document.createElement("section");
     el.className = "pop" + (o.wide ? " wide" : "");
     el.innerHTML = `<div class="pop-h"><b>${esc(title)}</b><button type="button" class="pop-m" aria-label="最小化" title="最小化">–</button><button type="button" class="pop-x" aria-label="閉じる" title="閉じる(Shift+→)">×</button></div><div class="pop-b"></div>`;
-    const w = { el, title, body: el.querySelector(".pop-b") };
+    const c = ctx || {};
+    const w = { el, title, body: el.querySelector(".pop-b"), kind: c.kind, arg: c.arg, remote: !!c.remote, owner: c.owner, wid: c.wid || Math.random().toString(36).slice(2, 10), pose: c.pose };
+    if (w.remote) el.classList.add("remote");
     el.querySelector(".pop-x").onclick = () => close(w);
     el.querySelector(".pop-m").onclick = () => el.classList.toggle("min");
     build(w.body, w);
@@ -40,15 +44,34 @@ export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d 
   }
   function show(w) {
     document.body.appendChild(w.el);   // 大きさを測るため、いったんふつうに置く
+    if (w.remote) { win3d.adopt(w.el, { remote: true, pose: w.pose }); remotes.set(w.owner + ":" + w.wid, w); return; }
     win3d.adopt(w.el);
     open.push(w);
   }
   function close(w) {
+    if (w.remote) { win3d.remove(w.el); w.el.remove(); remotes.delete(w.owner + ":" + w.wid); return; }
     const i = open.indexOf(w);
     if (i < 0) return;
     open.splice(i, 1); win3d.remove(w.el); w.el.remove();
     closed.push(w); if (closed.length > 20) closed.shift();
+    if (w.kind) send({ t: "win", op: "close", wid: w.wid });
   }
+  // 置いたら、ほかの人にも見えるように知らせる
+  function placed(el) {
+    const w = open.find((x) => x.el === el);
+    if (!w || !w.kind) return;
+    send({ t: "win", op: "open", w: { wid: w.wid, kind: w.kind, arg: w.arg ?? "", pose: win3d.poseOf(el) } });
+  }
+  // 種類と引数から、ウィンドウを作る(自分のも、ほかの人のも)
+  function openKind(kind, arg, extra) {
+    const K = KINDS[kind];
+    if (!K) return;
+    const obj = K[0](arg);
+    if (obj === undefined) return;
+    ctx = Object.assign({ kind, arg }, extra || {});
+    try { K[1](obj); } finally { ctx = null; }
+  }
+  const postById = (id) => halls.postById(id) || undefined, tweetById = (id) => halls.tweetById(id) || undefined;
   const api2 = (action, body) => api(Object.assign({ action, token: getToken() }, body || {}));
 
   // ---------- 中身 ----------
@@ -56,9 +79,9 @@ export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d 
   function postMenu(p) {
     const me = getMe();
     make("メニュー", (b) => {
-      const items = [["chart", "アナリティクス", () => analytics(p)], ["share", "共有", () => share(p)]];
-      if (me && me.uid === p.uid) items.push(["edit", "投稿の情報を編集…", () => onSite("投稿の情報を編集", "#/watch/" + p.id)]);
-      else items.push(["flag", "通報", () => onSite("通報", "#/watch/" + p.id)]);
+      const items = [["chart", "アナリティクス", () => openKind("analytics", p.id)], ["share", "共有", () => openKind("share", p.id)]];
+      if (me && me.uid === p.uid) items.push(["edit", "投稿の情報を編集…", () => openKind("onSite", "投稿の情報を編集|#/watch/" + p.id)]);
+      else items.push(["flag", "通報", () => openKind("onSite", "通報|#/watch/" + p.id)]);
       items.push(["open", "サイトで開く", () => window.open(SITE + "#/watch/" + encodeURIComponent(p.id), "_blank", "noopener")]);
       b.innerHTML = `<div class="gmenu">${items.map((x, i) => `<button type="button" data-i="${i}">${ico(x[0])}<span>${esc(x[1])}</span></button>`).join("")}</div>`;
       b.querySelectorAll("button").forEach((bt) => { bt.onclick = () => items[+bt.dataset.i][2](); });
@@ -96,7 +119,7 @@ export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d 
         b.querySelectorAll("[data-tab]").forEach((x) => { x.onclick = () => { tab = x.dataset.tab; render(); }; });
         b.querySelectorAll(".ch-post").forEach((x) => { x.onclick = () => { goInto(x.dataset.id); close(w); }; });
         b.querySelectorAll(".ch-thumb").forEach((x) => { const p = c.posts.find((q) => q.id === x.dataset.p); if (p) coverImage(p, (img) => { x.style.backgroundImage = `url("${img.src}")`; }); });
-        b.querySelectorAll(".tw[data-id]").forEach((x) => { x.onclick = () => tweet(c.tweets.find((t) => t.id === x.dataset.id)); });
+        b.querySelectorAll(".tw[data-id]").forEach((x) => { x.onclick = () => openKind("tweet", x.dataset.id); });
       };
       render();
     }, { wide: true });
@@ -132,11 +155,14 @@ export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d 
   }
   function tweetMenu(t) {
     make("メニュー", (b) => {
-      const items = [["chart", "アナリティクス", () => make("アナリティクス", (bb) => { bb.innerHTML = `<div class="an-grid">${[["表示数", t.views], ["返信", t.replies], ["リツイート", t.rts], ["ハート", t.likes]].map((r) => `<div class="an-cell"><div class="sub">${r[0]}</div><div class="an-n">${Number(r[1] || 0).toLocaleString("ja-JP")}</div></div>`).join("")}</div>`; })],
+      const items = [["chart", "アナリティクス", () => openKind("tweetAnalytics", t.id)],
         ["open", "サイトで開く", () => window.open(SITE + "#/board/" + encodeURIComponent(t.id), "_blank", "noopener")]];
       b.innerHTML = `<div class="gmenu">${items.map((x, i) => `<button type="button" data-i="${i}">${ico(x[0])}<span>${esc(x[1])}</span></button>`).join("")}</div>`;
       b.querySelectorAll("button").forEach((bt) => { bt.onclick = () => items[+bt.dataset.i][2](); });
     });
+  }
+  function tweetAnalytics(t) {
+    make("アナリティクス", (bb) => { bb.innerHTML = `<div class="an-grid">${[["表示数", t.views], ["返信", t.replies], ["リツイート", t.rts], ["ハート", t.likes]].map((r) => `<div class="an-cell"><div class="sub">${r[0]}</div><div class="an-n">${Number(r[1] || 0).toLocaleString("ja-JP")}</div></div>`).join("")}</div>`; });
   }
   function composer(ph) {
     return `<form class="tw-comp" novalidate><textarea maxlength="20000" rows="3" placeholder="${esc(ph)}"></textarea><p class="err"></p><div class="dlg-acts"><button class="btn primary" type="submit">${ico("edit")}<span>ツイートする</span></button></div></form>`;
@@ -154,11 +180,14 @@ export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d 
       say("ツイートしました"); halls.refreshSoon(); done();
     };
   }
+  const busyNote = (b, what) => { b.innerHTML = `<p class="lead">${esc(what)}を書いています…</p>`; };
   function tweetForm() {
+    if (ctx && ctx.remote) { make("ツイートする", (b) => busyNote(b, "ツイート")); return; }
     make("ツイートする", (b, w) => { b.innerHTML = composer("いまどうしてる？"); bindComposer(b, (text) => api2("postTweet", { text }), () => close(w)); setTimeout(() => b.querySelector("textarea").focus(), 30); });
   }
   // 投稿する(サイトの投稿ダイアログと同じ項目)
   function postForm() {
+    if (ctx && ctx.remote) { make("投稿する", (b) => busyNote(b, "投稿")); return; }
     make("投稿する", (b, w) => {
       const cats = halls.categories.length ? halls.categories : ["学習"];
       b.innerHTML = `<p class="lead">artifact や Webサイトの URL を貼って、投稿します。</p>
@@ -201,7 +230,8 @@ export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d 
   }
   function download(p) {
     const fl = p.files && p.files.length ? p.files : [{ name: p.fileName, size: p.fileSize }];
-    if (fl.length <= 1) { say("ダウンロード中…"); saveOne(p, 0).then((ok) => ok && say("ダウンロードしました")); return; }
+    if (fl.length <= 1 && !(ctx && ctx.kind)) { say("ダウンロード中…"); saveOne(p, 0).then((ok) => ok && say("ダウンロードしました")); return; }
+    if (!(ctx && ctx.kind)) { openKind("download", p.id); return; }
     make("ダウンロードするファイルを選ぶ", (b, w) => {
       b.innerHTML = `<p class="lead">${fl.length}個のファイル（合計 ${esc(fmtSize(p.fileSize))}）</p><div class="files">${fl.map((f, i) => `<label class="file-row"><input type="checkbox" data-i="${i}" checked><span class="fn">${esc(f.name || "ファイル")}</span><span class="sub">${esc(fmtSize(f.size))}</span></label>`).join("")}</div><div class="dlg-acts"><button class="btn" type="button" data-all>すべて選ぶ</button><button class="btn primary" type="button" data-go>${ico("dl")}<span>ダウンロード</span></button></div>`;
       b.querySelector("[data-all]").onclick = () => b.querySelectorAll("input[type=checkbox]").forEach((x) => { x.checked = true; });
@@ -215,8 +245,28 @@ export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d 
     });
   }
 
+  const onSiteArg = (a) => { const [what, hash] = String(a).split("|"); onSite(what, hash || ""); };
+  const KINDS = {
+    postMenu: [postById, postMenu], analytics: [postById, analytics], share: [postById, share], download: [postById, download],
+    channel: [(uid) => uid, channel], tweet: [tweetById, tweet], tweetMenu: [tweetById, tweetMenu], tweetAnalytics: [tweetById, tweetAnalytics],
+    postForm: [() => null, postForm], tweetForm: [() => null, tweetForm], onSite: [(a) => a, onSiteArg],
+  };
+  const pub = (kind, idOf) => (x) => openKind(kind, idOf ? idOf(x) : x);
   return {
-    postMenu, channel, tweet, tweetMenu, postForm, tweetForm, download, share,
+    postMenu: pub("postMenu", (p) => p.id), channel: pub("channel"), tweet: pub("tweet", (t) => t.id), tweetMenu: pub("tweetMenu", (t) => t.id),
+    postForm: () => openKind("postForm", ""), tweetForm: () => openKind("tweetForm", ""), download: (p) => download(p), share: pub("share", (p) => p.id),
+    placed,
+    // ほかの人のウィンドウ(開く・動かす・閉じる)
+    onRemote(m) {
+      if (m.op === "closeAll") { for (const [k, w] of [...remotes]) if (k.startsWith(m.id + ":")) close(w); return; }
+      const key = m.id + ":" + (m.op === "close" ? m.wid : m.w && m.w.wid);
+      const old = remotes.get(key);
+      if (m.op === "close") { if (old) close(old); return; }
+      if (!m.w || !m.w.pose) return;
+      if (old && old.kind === m.w.kind && old.arg === m.w.arg) { win3d.setPose(win3d.panelOf ? win3d.panelOf(old.el) : null, m.w.pose); return; }
+      if (old) close(old);
+      openKind(m.w.kind, m.w.arg, { remote: true, owner: m.id, wid: m.w.wid, pose: m.w.pose });
+    },
     get count() { return open.length; },
     // Shift+→: いちばん新しいウィンドウを消す / Shift+←: 消したものをもどす
     closeTop() { const w = open[open.length - 1]; if (w) close(w); return !!w; },

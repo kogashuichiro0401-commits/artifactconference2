@@ -250,7 +250,8 @@ export class Room {
       const edits = [];
       for (const [k, v] of this.edits) { const [ex, ey, ez] = k.split(",").map(Number); edits.push([ex, ey, ez, v]); }
       const recent = await this.chatPage(null);
-      this.send(ws, { t: "welcome", chat: recent.items, chatMore: recent.more, id: me.id, name: me.name, admin: me.admin, version: VERSION, max: MAX_PLAYERS, players: list.map((p) => pub(p.a)), edits });
+      const wins = []; if (this.wins) for (const p of list) { const mw = this.wins.get(p.a.id); if (mw) for (const w of mw.values()) wins.push({ id: p.a.id, w }); }
+      this.send(ws, { t: "welcome", wins, chat: recent.items, chatMore: recent.more, id: me.id, name: me.name, admin: me.admin, version: VERSION, max: MAX_PLAYERS, players: list.map((p) => pub(p.a)), edits });
       this.broadcast({ t: "join", p: pub(me) }, ws);
       this.ctx.storage.setAlarm(Date.now() + SWEEP_MS);   // 見はり開始
       return;
@@ -286,6 +287,8 @@ export class Room {
       this.handleClone(ws, a, m);
     } else if (m.t === "fill") {
       this.handleFill(ws, a, m);
+    } else if (m.t === "win") {
+      this.handleWin(ws, a, m);
     } else if (m.t === "swing") {
       // 手をふった: ほかの全員に知らせる(見た目だけ)
       const now = Date.now();
@@ -308,10 +311,38 @@ export class Room {
     }
   }
 
+  // ウィンドウ(ほかの人にも見える)。開いた・動かした(open)/閉じた(close)を、みんなに知らせる
+  handleWin(ws, a, m) {
+    const now = Date.now();
+    if (now - (a.winAt || 0) < 80) return;
+    a.winAt = now; ws.serializeAttachment(a);
+    if (!this.wins) this.wins = new Map();
+    let mine = this.wins.get(a.id);
+    if (!mine) { mine = new Map(); this.wins.set(a.id, mine); }
+    const okId = (v) => typeof v === "string" && /^[a-z0-9]{1,12}$/.test(v);
+    if (m.op === "close") {
+      if (!okId(m.wid)) return;
+      mine.delete(m.wid);
+      this.broadcast({ t: "win", id: a.id, op: "close", wid: m.wid }, ws);
+      return;
+    }
+    if (m.op !== "open" || !m.w || typeof m.w !== "object") return;
+    const w = m.w, ps = w.pose || {};
+    const KINDS = ["postMenu", "analytics", "share", "download", "channel", "tweet", "tweetMenu", "tweetAnalytics", "postForm", "tweetForm", "onSite"];
+    const nums = (v, n, lim) => Array.isArray(v) && v.length === n && v.every((x) => typeof x === "number" && Number.isFinite(x) && Math.abs(x) <= lim);
+    if (!okId(w.wid) || KINDS.indexOf(w.kind) < 0 || typeof w.arg !== "string" || w.arg.length > 120) return;
+    if (!nums(ps.pos, 3, 1e5) || !nums(ps.quat, 4, 1.01) || !(typeof ps.s === "number" && ps.s > 0 && ps.s < 1)) return;
+    const clean = { wid: w.wid, kind: w.kind, arg: w.arg, pose: { pos: ps.pos, quat: ps.quat, s: ps.s } };
+    mine.delete(w.wid); mine.set(w.wid, clean);
+    while (mine.size > 8) mine.delete(mine.keys().next().value);   // 1人8つまで
+    this.broadcast({ t: "win", id: a.id, op: "open", w: clean }, ws);
+  }
+
   drop(ws) {
     const a = ws.deserializeAttachment();
     if (a && a.id) {
       try { ws.serializeAttachment({}); } catch (e) { /* すでに閉じている */ }   // 二重に「退出」を送らないため
+      if (this.wins) this.wins.delete(a.id);
       this.broadcast({ t: "leave", id: a.id, name: a.name }, ws);
     }
   }

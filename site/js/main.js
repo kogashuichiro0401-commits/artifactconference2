@@ -34,7 +34,7 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem(SKEY) || "{}")); }
 
 // ----- 3D表示: 白い床・青い空・平ら -----
 const SKY = 0xf0a070;   // 夕日: 地平線のオレンジ(遠くのかすみの色)
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });   // alpha: ウィンドウの所だけ、絵をぬいて、うしろのHTMLを見せる
 renderer.shadowMap.enabled = !window.__NOSHADOW;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -148,8 +148,14 @@ const halls = createHalls(THREE, scene, {
 });
 // ウィンドウ。出たら、カーソルを出して操作できるようにする(画面をクリックすると、ゲームにもどる。ウィンドウは残る)
 // ウィンドウは「講義がちる。」と同じく、3Dの世界に立てる(十字がカーソル)
-const win3d = createWin3D(THREE, camera, controls, (t) => hud && hud.say(t));
-const wins = createWindows({ win3d,
+const win3d = createWin3D(THREE, scene, camera, controls, (t) => hud && hud.say(t), (p) => wins.placed(p.el));
+// ウィンドウより手前に、ブロックや箱があるか(十字の線が、そこまでに当たる距離)
+win3d.setOccluder((maxT) => {
+  const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
+  const wv = world.raycast(eye, L, maxT, false);
+  return Math.min(wv ? wv.t : Infinity, halls.collider.ray(eye, L, maxT));
+});
+const wins = createWindows({ win3d, send: (m) => net.send(m),
   api: siteApi, getToken, halls, getMe: () => (user ? { uid: user.uid, name: user.displayName || user.username || "" } : null),
   say: (t) => hud && hud.say(t),
   goInto: (id) => { halls.goInto(id, controls); requestLock(); },
@@ -348,6 +354,7 @@ const net = new Net({
     unstick();
     remotes.clear();
     for (const p of m.players) { remotes.add(p); halls.remoteLift(p.id, p.lf || null); }
+    for (const x of m.wins || []) wins.onRemote({ id: x.id, op: "open", w: x.w });   // ほかの人のウィンドウ
     if (m.version !== VERSION) updateFound(m.version);   // 古い画面のまま遊んでいる
     forceSend = true; welcomed = true;
     chatMore = !!m.chatMore;
@@ -357,7 +364,8 @@ const net = new Net({
     refreshOnline();
   },
   onJoin: (p) => { remotes.add(p); halls.remoteLift(p.id, p.lf); refreshOnline(); logSys((p.name || "だれか") + " が参加しました"); },
-  onLeave: (id, name) => { remotes.remove(id); halls.remoteLift(id, null); refreshOnline(); if (name) logSys(name + " が退出しました"); },
+  onLeave: (id, name) => { remotes.remove(id); halls.remoteLift(id, null); wins.onRemote({ op: "closeAll", id }); refreshOnline(); if (name) logSys(name + " が退出しました"); },
+  onWin: (m) => wins.onRemote(m),
   onPos: (m) => { remotes.setPos(m); halls.remoteLift(m.id, m.lf || null); },
   onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
   onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, m.v ? BLOCK : 0); logSys((m.by ? m.by + " が " : "") + m.n + (m.v ? "ブロックをうめました" : "ブロックぶんを空気にしました")); },
@@ -798,10 +806,11 @@ function releaseBow() {
   arrows.shoot(pos, vel, true);
   if (net.ready()) net.sendShoot(pos, vel);
 }
-window.addEventListener("mouseup", (e) => { if (!isTouch && e.button === 2) releaseBow(); });
+window.addEventListener("mouseup", (e) => { if (!e.isTrusted) return; if (!isTouch && e.button === 2) releaseBow(); });
 window.addEventListener("blur", cancelCharge);
 function startCharge() { charge = { t0: performance.now() }; chargeEl.hidden = false; }
 window.addEventListener("mousedown", (e) => {
+  if (!e.isTrusted) return;   // ウィンドウの中に送ったクリック(十字のカーソル)は、ここでは受けない
   if (isTouch || !locked || panel) return;
   const it = hud.selectedItem(), glide = controls.p.glide;
   if (e.button === 2) {   // 右クリック: 使う / ためる / 置く
@@ -810,7 +819,7 @@ window.addEventListener("mousedown", (e) => {
     if (it === "bow") { startCharge(); return; }
     if (isAdmin && (buildMode || holdingMark())) { buildClick(2); return; }
     if (it === "book") useItem();
-  } else if (e.button === 0 && win3d.click()) { swingHand();   // ウィンドウ(十字がカーソル)
+  } else if (e.button === 0 && win3d.click()) { if (win3d.dragging) controls.freeze = true; else swingHand();   // ウィンドウ(十字がカーソル)
   } else if (e.button === 0 && !glide) {   // 左クリック: 壊す(建築モード) / なぐる
     if (!buildMode && tryBreakMark()) swingHand();
     else if (buildMode && isAdmin) buildClick(0);   // 建築破壊モードでは、建築・破壊だけ
@@ -818,14 +827,47 @@ window.addEventListener("mousedown", (e) => {
   }
 });
 window.addEventListener("contextmenu", (e) => e.preventDefault());
+// ホイール: ふだんは拡大縮小。十字がスクロールできる面(ウィンドウ・箱の奥のページ)の上なら、
+//  ・トラックパッドの二本指 → スクロール(ピンチは拡大縮小)
+//  ・マウス: ホイールを押すと「スクロールモード」(面の上にいる間、ホイールでスクロール)。もう一度押すと、もどる
+let scrollMode = false, padAt = 0;
+function isPad(e) {
+  if (e.ctrlKey) return false;
+  const now = performance.now();
+  const pad = e.deltaMode === 0 && (e.deltaX !== 0 || (Math.abs(e.deltaY) < 50 && Math.abs(e.deltaY - Math.round(e.deltaY)) > 0.001) || Math.abs(e.deltaY) < 8);
+  if (pad) padAt = now;
+  return pad || now - padAt < 150;
+}
+function scrollPlane(dy, dx) {   // 十字の下の面をスクロール。面がなければ false
+  if (win3d.under()) return win3d.scrollUnder(dy, dx);
+  const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
+  return halls.wheelPage(eye, L, dy);
+}
+function overPlane() {
+  if (win3d.under()) return true;
+  const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
+  return halls.wheelPage(eye, L, 0);
+}
 window.addEventListener("wheel", (e) => {
   if (!locked || panel) return;
   e.preventDefault();
-  if (win3d.wheel(e)) return;   // ウィンドウ: スクロール / 置く前なら、近く・遠く
-  const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
-  if (halls.wheelPage(eye, L, e.deltaY * (e.deltaMode === 1 ? 16 : 1))) return;   // 箱の奥のページ: スクロール
+  if (win3d.previewWheel(e)) return;   // 置く前のウィンドウ: 近く・遠く
+  const dy = e.deltaY * (e.deltaMode === 1 ? 16 : 1), dx = e.deltaX * (e.deltaMode === 1 ? 16 : 1);
+  if ((isPad(e) || scrollMode) && scrollPlane(dy, dx)) return;
   controls.wheel(e);
 }, { passive: false });
+// ホイールを押す: スクロールモードの切り替え(十字が面の上のとき)
+window.addEventListener("mousedown", (e) => {
+  if (!e.isTrusted) return;   // ウィンドウの中に送ったクリック(十字のカーソル)は、ここでは受けない
+  if (e.button !== 1 || !locked || panel) return;
+  e.preventDefault();
+  if (!overPlane() && !scrollMode) { hud.say("スクロールできる面に十字を合わせて、ホイールを押してください"); return; }
+  scrollMode = !scrollMode;
+  hud.say(scrollMode ? "スクロールモード: ホイールでスクロール(もう一度押すと拡大縮小)" : "拡大縮小モード");
+});
+// スクロールのバーをつかんでいる間は、マウスの上下でスクロール(視点は動かさない)
+document.addEventListener("mousemove", (e) => { if (win3d.dragging) win3d.dragMove(e.movementY || 0); }, true);
+window.addEventListener("mouseup", (e) => { if (e.button === 0 && win3d.dragging) { win3d.dragEnd(); controls.freeze = false; } });
 
 window.addEventListener("keydown", (e) => {
   if (cmdOpen && cmdMode === "cmd") { cmdKey(e); return; }

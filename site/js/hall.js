@@ -8,7 +8,7 @@
 // 箱・壁・リフトは、ブロックではなく画面だけの展示物。当たり判定は、ここで持っている(world.virtual)。
 import * as SC from "./sitecards.js";
 
-const W = 30, ROWH = 30, Y0 = 0.5, FRONT = 40.5, D = 70;   // 前面は、はじまりの場所から 40.5(1段目の上のふちが画面のいちばん上)。奥行き 70
+const W = 30, ROWH = 30, Y0 = 0.5, FRONT = 40.5, D = 20;   // 前面は、はじまりの場所から 40.5(1段目の上のふちが画面のいちばん上)。奥行き 20
 const PITCH_X = 33.5, PITCH_Y = 31.5;              // 箱どうしの間かく(となりとは、少しだけすきまをあける)
 const THUMB = W * 9 / 16, OPEN_Y = ROWH - THUMB;   // サムネイル(16:9)の高さ / その下のはし。箱の中は、サムネのうしろだけ
 const IN_H = ROWH - 0.5 - OPEN_Y;                  // 箱の中の高さ
@@ -58,6 +58,29 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
     const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3)); return g;
   })();
   const edgeMat = new THREE.LineBasicMaterial({ color: 0xdcdcdc });
+  // ---- マイクラの影(角のかげ): 箱の中の、面と面がまじわる角を暗くする ----
+  function aoTex(wb, hb, e) {   // wb×hb ブロックの面。e = [左, 右, 上, 下] のどのふちを暗くするか
+    const P = 12, c = document.createElement("canvas"); c.width = Math.round(wb * P); c.height = Math.round(hb * P);
+    const g = c.getContext("2d"), r = 1.1 * P, A = 0.34;
+    const band = (x0, y0, x1, y1, w, h) => { const gr = g.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, `rgba(0,0,0,${A})`); gr.addColorStop(0.45, `rgba(0,0,0,${A * 0.35})`); gr.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = gr; g.fillRect(...w, ...h); };
+    if (e[0]) band(0, 0, r, 0, [0, 0], [r, c.height]);
+    if (e[1]) band(c.width, 0, c.width - r, 0, [c.width - r, 0], [r, c.height]);
+    if (e[2]) band(0, 0, 0, r, [0, 0], [c.width, r]);
+    if (e[3]) band(0, c.height, 0, c.height - r, [0, c.height - r], [c.width, r]);
+    const t = new THREE.CanvasTexture(c); t.minFilter = THREE.LinearFilter; return t;
+  }
+  const aoMat = (t) => new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false, fog: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const AO = (() => {
+    const yc = OPEN_Y + IN_H / 2, list = [];
+    const add = (geo, tex, f) => { const m = new THREE.Mesh(geo, aoMat(tex)); f(m); list.push(m); };
+    add(new THREE.PlaneGeometry(W, D), aoTex(W, D, [1, 1, 1, 0]), (m) => { m.rotation.x = -Math.PI / 2; m.position.set(0, OPEN_Y + 0.01, -D / 2); });          // 床
+    add(new THREE.PlaneGeometry(W, D), aoTex(W, D, [1, 1, 0, 1]), (m) => { m.rotation.x = Math.PI / 2; m.position.set(0, ROWH - 0.51, -D / 2); });          // 天井
+    add(new THREE.PlaneGeometry(D, IN_H), aoTex(D, IN_H, [0, 1, 1, 1]), (m) => { m.rotation.y = Math.PI / 2; m.position.set(-14.99, yc, -D / 2); });       // 左の壁
+    add(new THREE.PlaneGeometry(D, IN_H), aoTex(D, IN_H, [1, 0, 1, 1]), (m) => { m.rotation.y = -Math.PI / 2; m.position.set(14.99, yc, -D / 2); });      // 右の壁
+    add(new THREE.PlaneGeometry(W, IN_H), aoTex(W, IN_H, [1, 1, 1, 1]), (m) => { m.position.set(0, yc, -D + 0.01); });                                     // 奥の壁
+    return list;
+  })();
+  function aoGroup() { const g = new THREE.Group(); for (const m of AO) { const c = new THREE.Mesh(m.geometry, m.material); c.position.copy(m.position); c.rotation.copy(m.rotation); c.renderOrder = 1; g.add(c); } return g; }
   // 中から見たサムネ(裏から見るので、左右が反対。カードの絵の上の 9/16 だけ)
   const innerGeo = (() => {
     const g = new THREE.PlaneGeometry(W, THUMB), uv = g.attributes.uv;
@@ -94,9 +117,9 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
   function makeKiosk(H) {
     const s = H.s, g = new THREE.Group();
     const cx = -s * 5.2, cz = s * 0.4;   // 北を向いたときの右 = +x、南を向いたときの右 = -x
-    g.position.set(cx, 1.75, cz);
+    g.position.set(cx, 1.45, cz);
     g.rotation.order = "YXZ";
-    g.rotation.y = Math.atan2(0 - cx, 0 - cz); g.rotation.x = -0.18;   // はじまりの場所の方へ、ななめに向ける
+    g.rotation.y = Math.atan2(0 - cx, 0 - cz); g.rotation.x = -0.42;   // はじまりの場所の方へ、ななめに向ける(上を向いて、立っている人の目に向く)
     scene.add(g);
     const ppb = 110, bh = 0.62, bw = 1.25;
     const main = H.kind === "post"
@@ -104,7 +127,6 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
       : { label: "ツイートする", icon: "edit", style: "primary", onPress: () => ui.tweetForm() };
     buttons.add({ parent: g, x: 0, y: 0.5, z: 0, w: H.kind === "post" ? 1.5 : 2.4, h: bh * 1.05, pxPerBlock: ppb, cssH: 44, face: main, onPress: main.onPress });
     const opts = H.kind === "post" ? [["popular", "人気順"], ["new", "新しい順"], ["old", "古い順"]] : [["new", "新しい順"], ["popular", "人気順"], ["old", "古い順"]];
-    buttons.base(g, 0, -0.32, 0, bw * 3 + 0.22, bh + 0.22);
     opts.forEach(([key, label], i) => {
       const b = buttons.add({ parent: g, x: (i - 1) * bw, y: -0.32, z: 0, w: bw - 0.02, h: bh, pxPerBlock: ppb, cssH: 44, sticky: true,
         face: { label, style: i === 0 ? "sort-l" : i === 2 ? "sort-r" : "sort", pressed: key === H.sort },
@@ -118,7 +140,7 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
   function makeItem(H, d, i) {
     const g = new THREE.Group();
     g.rotation.y = H.s < 0 ? 0 : Math.PI;
-    g.add(new THREE.Mesh(shellGeo, shellMat), new THREE.LineSegments(edgeGeo, edgeMat));
+    g.add(new THREE.Mesh(shellGeo, shellMat), new THREE.LineSegments(edgeGeo, edgeMat), aoGroup());
     const it = { H, d, id: d.id, slot: i, cur: H.slotPos(i), g, cv: null, tex: null, front: null, inner: null, page: null, dist: 1e9 };
     const mk = () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, toneMapped: false });
     it.front = new THREE.Mesh(frontGeo, mk()); it.front.position.set(0, ROWH / 2, 0.03); it.front.renderOrder = 3;
@@ -306,6 +328,8 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
         const mesh = new THREE.Mesh(new THREE.PlaneGeometry(TW_W * TW_K, hcss * TW_K), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true }));
         mesh.rotation.y = H.s < 0 ? 0 : Math.PI;
         mesh.userData.tweet = it;
+        // 裏からも見える(字が読めるように、裏返した板)
+        const back = new THREE.Mesh(mesh.geometry, mesh.material); back.rotation.y = Math.PI; back.position.z = -0.02; back.userData.tweet = it; mesh.add(back);
         it.mesh = mesh; H.root.add(mesh);
       }
       next.push(it);
@@ -572,6 +596,8 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
       const name = u.name || (PH.data.find((p) => p.uid === uid) || {}).author || "チャンネル";
       return { uid, name, handle: u.handle || "", avatar: u.avatar || "", subs: (PH.extra.subCounts || {})[uid] || 0, posts: PH.data.filter((p) => p.uid === uid).sort((a, b) => b.createdAt - a.createdAt), tweets: TH.data.filter((t) => t.uid === uid).sort((a, b) => b.createdAt - a.createdAt) };
     },
+    postById(id) { return PH.data.find((p) => p.id === id) || null; },
+    tweetById(id) { return TH.data.find((t) => t.id === id) || null; },
     tweetUser(uid) { return TH.users[uid] || PH.users[uid] || {}; },
     // 投稿の箱の中へ(チャンネルのウィンドウから)
     goInto(id, ctl) {

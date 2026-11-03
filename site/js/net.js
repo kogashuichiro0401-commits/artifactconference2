@@ -49,7 +49,7 @@ export class Net {
 
   sendPos(p) {
     if (!this.ready()) return;
-    this.send({ t: "pos", x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly, sneak: p.sneak, glide: p.glide });
+    this.send({ t: "pos", x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly, sneak: p.sneak, glide: p.glide, lf: p.lf || null });
   }
 
   open() {
@@ -107,6 +107,7 @@ export class Net {
       case "swing": if (this.h.onSwing) this.h.onSwing(m); break;
       case "hit": if (this.h.onHit) this.h.onHit(m); break;
       case "hurt": if (this.h.onHurt) this.h.onHurt(m); break;
+      case "win": if (m.id !== this.id && this.h.onWin) this.h.onWin(m); break;
       case "deny": this.h.onDeny(m); break;
       case "auth": this.wanted = false; this.h.onAuth(); break;
       case "kicked": this.wanted = false; this.h.onKicked(); break;

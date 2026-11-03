@@ -15,12 +15,13 @@ button{cursor:pointer}
 [hidden]{display:none!important}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #view{position:fixed;inset:0;width:100%;height:100%;display:block}
-#hud{position:fixed;inset:0;pointer-events:none;color:#fff}
+#hud{position:fixed;inset:0;pointer-events:none;color:#fff;z-index:10}
 body.login #bottom,body.login #online{display:none}
 body.ui #cross,body.ui #hint,body.ui #feed,body.ui #left{display:none}
 
-#cross{position:absolute;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;filter:drop-shadow(0 0 1px rgba(0,0,0,.9)) drop-shadow(0 0 2px rgba(0,0,0,.55))}
-#cross i{position:absolute;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.75)}
+/* 十字: マイクラと同じく、うしろの色を反転させて描く(たいていは白っぽく、白いものの上では黒っぽく)。いつも、いちばん手前 */
+#cross{position:fixed;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;z-index:40;pointer-events:none;mix-blend-mode:difference}
+#cross i{position:absolute;background:#e8e8e8}
 #cross i:nth-child(1){left:9px;top:0;width:2px;height:20px}
 #cross i:nth-child(2){left:0;top:9px;width:20px;height:2px}
 /* 表示まわりは、マイクラのように半分すけた黒地 */
@@ -65,7 +66,7 @@ body.ui #cross,body.ui #hint,body.ui #feed,body.ui #left{display:none}
 #hotbar .slot.sel{background:rgba(255,255,255,.25);border-color:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.5)}
 
 #shade{position:fixed;inset:0;background:rgba(0,0,0,.45)}
-.panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);max-height:92vh;max-width:94vw;overflow:auto;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:20px 22px;user-select:text;-webkit-user-select:text}
+.panel{z-index:50;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);max-height:92vh;max-width:94vw;overflow:auto;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:20px 22px;user-select:text;-webkit-user-select:text}
 .panel.wide{width:min(560px,94vw)}
 .brand{display:flex;align-items:center;gap:8px;margin:0 0 14px;font-weight:900;font-size:22px;letter-spacing:.01em}
 .brand b{color:var(--accent);font-weight:900}

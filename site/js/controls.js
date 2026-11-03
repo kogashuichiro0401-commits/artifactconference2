@@ -64,7 +64,7 @@ export class Controls {
   }
 
   mouse(e) {
-    if (!this.locked) return;
+    if (!this.locked || this.freeze) return;   // freeze: スクロールのバーをつかんでいる間は、視点を動かさない
     const p = this.p, k = 0.0035 * this.sens / p.zm;
     p.yaw -= (e.movementX || 0) * k;
     p.pitch = Math.max(-1.5707, Math.min(1.5707, p.pitch - (e.movementY || 0) * k));

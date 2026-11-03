@@ -29,7 +29,7 @@ export function createButtons(THREE) {
     const ppb = spec.pxPerBlock || 64;
     cv.width = Math.max(8, Math.round(spec.w * ppb)); cv.height = Math.max(8, Math.round(spec.h * ppb));
     const tex = new THREE.CanvasTexture(cv); tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter; tex.anisotropy = 4;
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(spec.w, spec.h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, fog: false }));
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(spec.w, spec.h), new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, toneMapped: false, fog: false }));
     face.position.z = DEPTH / 2 + 0.003;
     const st = (spec.face && spec.face.style) || "btn";
     const roundL = !/(^sort$|seg-r|sort-r)/.test(st), roundR = !/(^sort$|seg-l|sort-l)/.test(st);
