@@ -876,13 +876,14 @@ window.addEventListener("keydown", (e) => {
     if (panel && panel !== "login" && performance.now() - unlockedAt > 400) setPanel(null);
     return;
   }
-  if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;   // 文字を入力している間は、操作キーを使わない
-  if ((e.code === "Enter" || e.code === "NumpadEnter") && win3d.previewing) { e.preventDefault(); win3d.fixAll(); return; }   // ウィンドウを置く
-  if (e.shiftKey && (e.code === "ArrowRight" || e.code === "ArrowLeft")) {   // ウィンドウ: Shift+→ 消す / Shift+← もどす
-    e.preventDefault();
-    if (e.code === "ArrowRight") wins.closeTop(); else wins.restore();
-    return;
+  // ウィンドウ: Shift+→ 消す / Shift+← もどす(入力欄に字が入っているときは、字の操作に使う。講義がちる。と同じ)
+  const field = e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+  if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && (e.code === "ArrowRight" || e.code === "ArrowLeft") && !(field && e.target.value)) {
+    const done = e.code === "ArrowRight" ? wins.closeTop() : wins.restore();
+    if (done) { e.preventDefault(); if (field) e.target.blur(); return; }
   }
+  if (field) return;   // 文字を入力している間は、操作キーを使わない
+  if ((e.code === "Enter" || e.code === "NumpadEnter") && win3d.previewing) { e.preventDefault(); win3d.fixAll(); return; }   // ウィンドウを置く
   if ((e.code === "Slash" && !e.shiftKey || e.key === "/") && !panel && locked) { e.preventDefault(); openCmd("cmd"); return; }
   if (e.code === "KeyT" && !e.ctrlKey && !e.metaKey && !e.altKey && !panel && locked) { e.preventDefault(); openCmd("chat"); return; }
   if (e.code === "KeyE") {

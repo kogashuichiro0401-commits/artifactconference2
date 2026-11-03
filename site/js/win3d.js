@@ -82,8 +82,6 @@ export function createWin3D(T, scene, camera, controls, say, onPlaced) {
     for (const p of panels) if (!p.fixed && !p.remote) { p.fixed = true; p.el.style.pointerEvents = "auto"; p.el.style.opacity = ""; last = p; if (onPlaced) onPlaced(p); }
     if (!last) return false;
     say("ウィンドウを置きました");
-    const f = last.el.querySelector("textarea, input[type=text], input[type=url]");
-    if (f) { try { f.focus({ preventScroll: true }); } catch (e) { /* なし */ } }
     return true;
   }
   function remove(el) {
@@ -191,7 +189,12 @@ export function createWin3D(T, scene, camera, controls, say, onPlaced) {
       let k = 0;
       for (const p of panels) {
         if (!p.el.isConnected || p.el.parentNode !== p.wrap) continue;
-        if (!p.fixed && !p.remote) { poseFor(p, k++); p.pos.copy(poseV); p.quat.copy(poseQ); place(p); }
+        if (!p.fixed && !p.remote) {   // プレビュー: 十字が、ウィンドウのまんなかに来るように
+          poseFor(p, k++); p.quat.copy(poseQ);
+          const hh = (p.el.offsetHeight * p.zf || 0) * p.s / 2;
+          p.pos.copy(poseV).addScaledVector(new T.Vector3(0, 1, 0).applyQuaternion(poseQ), hh);
+          place(p);
+        }
         const zx = p.mat.elements, dx = camera.position.x - p.pos.x, dy = camera.position.y - p.pos.y, dz = camera.position.z - p.pos.z;
         const back = (zx[8] * dx + zx[9] * dy + zx[10] * dz) < 0;
         if (p.back !== back) { p.back = back; p.el.style.transform = back ? "rotateY(180deg)" : ""; }

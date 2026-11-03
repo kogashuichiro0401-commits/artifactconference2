@@ -183,7 +183,7 @@ export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d,
   const busyNote = (b, what) => { b.innerHTML = `<p class="lead">${esc(what)}を書いています…</p>`; };
   function tweetForm() {
     if (ctx && ctx.remote) { make("ツイートする", (b) => busyNote(b, "ツイート")); return; }
-    make("ツイートする", (b, w) => { b.innerHTML = composer("いまどうしてる？"); bindComposer(b, (text) => api2("postTweet", { text }), () => close(w)); setTimeout(() => b.querySelector("textarea").focus(), 30); });
+    make("ツイートする", (b, w) => { b.innerHTML = composer("いまどうしてる？"); bindComposer(b, (text) => api2("postTweet", { text }), () => close(w)); });
   }
   // 投稿する(サイトの投稿ダイアログと同じ項目)
   function postForm() {
@@ -214,7 +214,6 @@ export function createWindows({ api, getToken, halls, say, goInto, getMe, win3d,
         if (!r || !r.ok) { er.textContent = (r && r.message) || "投稿できませんでした。"; return; }
         say("投稿しました"); halls.refreshSoon(); close(w);
       };
-      setTimeout(() => f.url.focus(), 30);
     });
   }
   // ダウンロード(ファイルが2つ以上なら、選ぶ)
