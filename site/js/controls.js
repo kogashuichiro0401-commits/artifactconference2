@@ -2,7 +2,7 @@
 //  歩く 4.32/ダッシュ 5.6/しゃがみ 1.31、ジャンプ 9・重力 32、飛行 10.9(ダッシュ 21)、
 //  落下中にSpaceでエリトラ(1tick=0.05秒ごとの揚力・急降下で加速)、右クリックでロケット花火、
 //  F5で視点切り替え、ホイールでズーム(視野角をせまく)、視点移動 0.0035/ズーム倍率。
-import { NX, NZ, YMIN } from "./shared.js";
+import { YMIN } from "./shared.js";
 
 const HW = 0.3;               // 体の半分の幅
 const VMAX = 40;              // エリトラの最高速度
@@ -212,9 +212,8 @@ export class Controls {
     this.stepSmooth *= Math.exp(-dt * 9);
     if (Math.abs(this.stepSmooth) < 0.002) this.stepSmooth = 0;
     // 世界はループ: はしを越えたら、反対がわから出る(上下も)
-    if (p.x >= NX - 0.5) p.x -= NX; else if (p.x < -0.5) p.x += NX;
-    if (p.z >= NZ - 0.5) p.z -= NZ; else if (p.z < -0.5) p.z += NZ;
-    if (p.y < YMIN - 20) { p.y = YMIN + 0.5; p.vy = 0; }   // 世界の底をぬけたら、床の上にもどす
+    // どこまでも落ちていったら(いちばん下の展示より、さらに下)、はじまりの場所にもどす
+    if (p.y < (this.world.voidY ?? YMIN - 64)) { this.respawn(); this.say("落ちてしまったので、はじまりの場所にもどりました"); }
     if (p.glide && p.ground) { p.glide = false; p.boost = 0; }
     if (p.fly && p.ground && keys.Shift) p.fly = false;
     // 体の向き(三人称視点で見える)

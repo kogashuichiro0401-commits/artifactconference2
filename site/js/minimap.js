@@ -1,11 +1,13 @@
 // 左上の現在地(3D)。世界の立方体を小さな別の場面に作り、自分の位置・向きを、青い点と扇(円すい)で示す。
 // 背景は塗らない(キャラの表示と同じく、うしろの景色が透ける)。地図の「右上」が北。
-import { NX, NZ, YMIN, YN } from "./shared.js";
-const K = Math.max(NX, NZ) / 49;   // 世界の大きさにあわせて、印や距離をのばす倍率
+// 世界はどこまでも広がるので、はじまりの場所のまわり(投稿ホール・つぶやきホールをふくむ範囲)を示す
+const X0 = -52, X1 = 52, Z0 = -72, Z1 = 72, Y0 = -90, Y1 = 31;
+const NX = X1 - X0, NZ = Z1 - Z0, YN = Y1 - Y0;
+const K = Math.max(NX, NZ) / 49;   // 範囲の大きさにあわせて、印や距離をのばす倍率
 
 export function createMinimap(T, el) {
   const scene = new T.Scene();
-  const cx = NX / 2 - 0.5, cy = YMIN + YN / 2 - 0.5, cz = NZ / 2 - 0.5, yb = YMIN - 0.5;
+  const cx = (X0 + X1) / 2, cy = (Y0 + Y1) / 2, cz = (Z0 + Z1) / 2, yb = Y0;
   const line = (geo, color, opacity) => new T.LineSegments(geo, new T.LineBasicMaterial({ color, transparent: true, opacity, depthTest: false }));
   // 立方体のふちと、床、16ブロックごとの区切り
   const box = line(new T.EdgesGeometry(new T.BoxGeometry(NX, YN, NZ)), 0xcfe1ff, 0.95);
@@ -13,8 +15,8 @@ export function createMinimap(T, el) {
   const floor = new T.Mesh(new T.PlaneGeometry(NX, NZ), new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, side: T.DoubleSide, depthWrite: false }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(cx, yb, cz); scene.add(floor);
   const gv = [];
-  for (let i = 1; i < NX / 16; i++) { const k = -0.5 + i * 16; gv.push(k, yb, -0.5, k, yb, NZ - 0.5); }
-  for (let i = 1; i < NZ / 16; i++) { const k = -0.5 + i * 16; gv.push(-0.5, yb, k, NX - 0.5, yb, k); }
+  for (let k = Math.ceil(X0 / 16) * 16 - 0.5; k < X1; k += 16) gv.push(k, yb, Z0, k, yb, Z1);
+  for (let k = Math.ceil(Z0 / 16) * 16 - 0.5; k < Z1; k += 16) gv.push(X0, yb, k, X1, yb, k);
   const gg = new T.BufferGeometry(); gg.setAttribute("position", new T.Float32BufferAttribute(gv, 3));
   scene.add(line(gg, 0xffffff, 0.5));
   // 自分: 白ふちの青い点、床までの線、床のかげ、向きの円すい

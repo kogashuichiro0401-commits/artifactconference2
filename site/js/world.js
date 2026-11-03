@@ -1,91 +1,76 @@
 // ブロックとプレートの世界(ブラウザ側)。保存・判定・光線・メッシュ作り。
-import { NX, NZ, YMIN, YN, BLOCK, ROPE, mod, defaultCell } from "./shared.js";
+// 世界は、横にどこまでも広がる(ループしない)。ブロックがある所だけ、16×16の区画(縦は YMIN〜YMIN+YN)で持つ。
+import { YMIN, YN, BLOCK, ROPE, defaultCell, DEFAULT_BLOCKS } from "./shared.js";
 import { PLATES, T } from "./plates.js";
 
 const HW = 0.3;
 export const RHW = 0.07;   // 縄の太さの半分
 export const CH = 16;   // メッシュの区画の大きさ(横)
-export const NCX = Math.ceil(NX / CH), NCZ = Math.ceil(NZ / CH);   // 区画の数。区画の番号 = cx * NCZ + cz
+export const chunkKey = (cx, cz) => cx + "," + cz;
 // ---- マイクラ式の明るさ ----
 // 1. 面の向き: 上がいちばん明るく、横は少し暗く、下がいちばん暗い(ほかのブロックは関係ない)
 export function shade(n) {
   return n[0] * n[0] * 0.74 + n[2] * n[2] * 0.86 + (n[1] > 0 ? n[1] * n[1] * 1.0 : n[1] * n[1] * 0.62);
 }
-// 2. 空の光: 上にさえぎるものがなければ15。そこから横・下へ、1ブロックごとに1ずつ弱まりながら広がる
-// 3. ブロックの光: 光るもの(いまは無し)から、同じように広がる。 EMISSIVE[セルの値] = 明るさ(1〜15)
-export const EMISSIVE = new Map();
-// プレートが空の光をさえぎる強さ(上から下へ通るときだけ)。上をおおう板ほど強く、立てた板は通す
-const PLATE_SKY = PLATES.map((p) => (p.diag ? Math.round(Math.abs(p.n[1]) * 3) : Math.abs(p.n[1]) > 0.5 ? 3 : 0));
-const skyCost = (v) => { let c = 0; for (let i = 0; i < 12; i++) if ((v & (1 << i)) && PLATE_SKY[i] > c) c = PLATE_SKY[i]; return c; };
+// 2. 空の光: 真上にブロックがなければ15、あれば11(かげ)
 // 光のレベル(0〜15) → 明るさのかけ算。1段ごとに約0.9倍
 const LIGHT_F = Array.from({ length: 16 }, (_, l) => Math.pow(0.9, 15 - l));
-// 4. 角のかげ(AO): ブロックの角・くぼみの頂点を、すこし暗くする
+// 3. 角のかげ(AO): ブロックの角・くぼみの頂点を、すこし暗くする
 const AO_STEP = 0.17;
+
+class Chunk {
+  constructor(cx, cz) {
+    this.cx = cx; this.cz = cz;
+    this.cells = new Uint16Array(CH * CH * YN);
+    this.top = new Int32Array(CH * CH).fill(YMIN - 1);   // 列ごとの、いちばん上のブロックの高さ
+    this.lo = Infinity; this.hi = -Infinity;             // 何かがある高さの範囲(メッシュ作りを速くする)
+  }
+}
 
 export class World {
   constructor() {
-    this.cells = new Uint16Array(NX * YN * NZ);
+    this.chunks = new Map();
     this.virtual = null;   // 画面だけの展示物(投稿の箱・リフト)の当たり判定: { hits(x,y,z,h) }
-    for (let y = YMIN; y < YMIN + YN; y++) for (let z = 0; z < NZ; z++) for (let x = 0; x < NX; x++) this.cells[this.idx(x, y, z)] = defaultCell(x, y, z);
-    this.dirty = new Set();
-    this.lightDirty = true;
-    this.light = null;
+    this.dirty = new Set();   // 作りなおす区画のキー
+    for (const [x, y, z] of DEFAULT_BLOCKS) this.set(x, y, z, defaultCell(x, y, z));
   }
-  idx(x, y, z) { return ((y - YMIN) * NZ + mod(z, NZ)) * NX + mod(x, NX); }
-  // 床より下はブロック(落ちない)、高さの範囲より上は空
-  get(x, y, z) { return y < YMIN ? BLOCK : y >= YMIN + YN ? 0 : this.cells[this.idx(x, y, z)]; }
+  chunkAt(x, z, make) {
+    const cx = Math.floor(x / CH), cz = Math.floor(z / CH), L = this._last;
+    if (L && L.cx === cx && L.cz === cz) return L;
+    const k = chunkKey(cx, cz);
+    let c = this.chunks.get(k);
+    if (c) this._last = c;
+    if (!c && make) { c = new Chunk(cx, cz); this.chunks.set(k, c); }
+    return c;
+  }
+  get(x, y, z) {
+    if (y < YMIN || y >= YMIN + YN) return 0;
+    const c = this.chunkAt(x, z, false);
+    if (!c) return 0;
+    return c.cells[((y - YMIN) * CH + (z - c.cz * CH)) * CH + (x - c.cx * CH)];
+  }
   set(x, y, z, v) {
     if (y < YMIN || y >= YMIN + YN) return;
-    this.cells[this.idx(x, y, z)] = v;
-    // 光は遠くまで広がるので、変更があったら、明るさを計算しなおして、全部の区画を作りなおす
-    this.lightDirty = true;
-    for (let i = 0; i < NCX * NCZ; i++) this.dirty.add(i);
-  }
-
-  // 光の計算(空の光 + ブロックの光)。light[idx] = 0〜15
-  relight() {
-    this.lightDirty = false;
-    const cells = this.cells, light = this.light || (this.light = new Uint8Array(cells.length));
-    light.fill(0);
-    const buckets = Array.from({ length: 16 }, () => []);
-    const cost = (v) => (v & BLOCK ? -1 : 1);   // 広がるときの弱まり方(-1=通れない)。プレートは横には通す
-    // 空の光: 上から下へ。ブロックでさえぎられたら0、プレートを通ると弱まる
-    for (let z = 0; z < NZ; z++) for (let x = 0; x < NX; x++) {
-      let lv = 15;
-      for (let y = YMIN + YN - 1; y >= YMIN; y--) {
-        const i = this.idx(x, y, z), v = cells[i];
-        if (v & BLOCK) lv = 0;
-        else if (v) lv = Math.max(0, lv - skyCost(v));
-        light[i] = lv;
-      }
-    }
-    for (let i = 0; i < cells.length; i++) {
-      const e = EMISSIVE.size ? EMISSIVE.get(cells[i]) : 0;
-      if (e && e > light[i]) light[i] = e;
-      if (light[i] > 0) buckets[light[i]].push(i);
-    }
-    // 広がり
-    const NN = NX * NZ;
-    for (let lv = 15; lv >= 2; lv--) {
-      const b = buckets[lv];
-      for (let k = 0; k < b.length; k++) {
-        const i = b[k];
-        if (light[i] !== lv) continue;
-        const xi = i % NX, zi = ((i / NX) | 0) % NZ, yi = (i / NN) | 0;
-        for (let d = 0; d < 6; d++) {
-          let nx = xi, nz = zi, ny = yi;
-          if (d === 0) nx = xi === NX - 1 ? 0 : xi + 1; else if (d === 1) nx = xi === 0 ? NX - 1 : xi - 1;
-          else if (d === 2) nz = zi === NZ - 1 ? 0 : zi + 1; else if (d === 3) nz = zi === 0 ? NZ - 1 : zi - 1;
-          else if (d === 4) { if (yi === YN - 1) continue; ny = yi + 1; } else { if (yi === 0) continue; ny = yi - 1; }
-          const j = (ny * NZ + nz) * NX + nx, c = cost(cells[j]);
-          if (c < 0) continue;
-          const nl = lv - c;
-          if (nl > light[j]) { light[j] = nl; if (nl > 1) buckets[nl].push(j); }
-        }
-      }
+    const c = this.chunkAt(x, z, !!v);
+    if (!c) return;
+    const lx = x - c.cx * CH, lz = z - c.cz * CH;
+    c.cells[((y - YMIN) * CH + lz) * CH + lx] = v;
+    if (v) { if (y < c.lo) c.lo = y; if (y > c.hi) c.hi = y; }
+    // 列のいちばん上(かげの計算)
+    const ci = lz * CH + lx;
+    if (v & BLOCK) { if (y > c.top[ci]) c.top[ci] = y; }
+    else if (y === c.top[ci]) { let t = y - 1; while (t >= YMIN && !(c.cells[((t - YMIN) * CH + lz) * CH + lx] & BLOCK)) t--; c.top[ci] = t; }
+    // この区画と、となりの区画(さかいめの面・かげが変わる)を作りなおす
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+      if ((dx === -1 && lx > 0) || (dx === 1 && lx < CH - 1) || (dz === -1 && lz > 0) || (dz === 1 && lz < CH - 1)) continue;
+      this.dirty.add(chunkKey(c.cx + dx, c.cz + dz));
     }
   }
-  lightAt(x, y, z) { return this.light[this.idx(x, y, z)]; }
+  lightAt(x, y, z) {
+    const c = this.chunkAt(x, z, false);
+    if (!c) return 15;
+    return y > c.top[(z - c.cz * CH) * CH + (x - c.cx * CH)] ? 15 : 11;
+  }
 
   // 体(横の半幅 HW、高さ h)が、ブロックやプレートに重なっているか。重なった箱 [x0,y0,z0,x1,y1,z1] を返す
   hits(x, y, z, h) {
@@ -211,7 +196,6 @@ const FACES = [
 ];
 
 export function buildChunk(world, cx, cz) {
-  if (world.lightDirty || !world.light) world.relight();
   const pos = [], col = [], idx = [];
   const opq = (x, y, z) => (world.get(x, y, z) & BLOCK ? 1 : 0);   // 角のかげ(AO)は、ブロックだけで決める
   // プレートの面の明るさ: そのセルの光と、まわりの空いたセルの光(−1)の大きいほう(プレート自身のせいで暗くならないように)
@@ -224,7 +208,9 @@ export function buildChunk(world, cx, cz) {
     }
     return Math.max(0, m);
   };
-  for (let x = cx * CH; x < Math.min(NX, cx * CH + CH); x++) for (let z = cz * CH; z < Math.min(NZ, cz * CH + CH); z++) for (let y = YMIN; y < YMIN + YN; y++) {
+  const ck = world.chunks.get(chunkKey(cx, cz));
+  if (!ck || ck.lo > ck.hi) return { pos: new Float32Array(0), col: new Float32Array(0), idx: new Uint16Array(0) };
+  for (let x = cx * CH; x < cx * CH + CH; x++) for (let z = cz * CH; z < cz * CH + CH; z++) for (let y = ck.lo; y <= ck.hi; y++) {
     const v = world.get(x, y, z);
     if (!v) continue;
     if (v & BLOCK) {

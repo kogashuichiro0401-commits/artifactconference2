@@ -7,11 +7,12 @@ import { createFirstPerson } from "./fp.js";
 import { createArrows } from "./arrows.js";
 import { restore, login, logout, getToken, loginGoogle, googleButton, api as siteApi } from "./auth.js";
 import { VERSION } from "./version.js";
-import { World, buildChunk, CH, NCX, NCZ } from "./world.js";
+import { World, buildChunk, CH } from "./world.js";
 import { BuildTool } from "./build.js";
 import { Marks } from "./marks.js";
-import { createHall } from "./hall.js";
-import { NX, NZ, YMIN, YN, BLOCK, REACH, SPAWN, mod, wrapDelta, SUN } from "./shared.js";
+import { createHalls } from "./hall.js";
+import { createButtons } from "./buttons.js";
+import { YMIN, YN, BLOCK, REACH, SPAWN, mod, SUN } from "./shared.js";
 import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
 import { createTouch, detectTouch } from "./touch.js";
@@ -38,25 +39,15 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
 scene.fog = new THREE.Fog(SKY, 70, 190);
-// 世界のはしを、青い枠で示す
-{
-  const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(NX, YN, NZ));
-  const fr = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1f6bff, fog: false }));
-  fr.position.set(NX / 2 - 0.5, YMIN + YN / 2 - 0.5, NZ / 2 - 0.5);
-  scene.add(fr);
-}
-// F2: 16ブロックごとの区切り(16×16×16の箱)
+// F2: 16ブロックごとの区切り(16×16×16の箱)。自分のまわり(5×5×4区画)だけ出して、動いたらついてくる
 const chunkGrid = (() => {
-  const v = [], x0 = -0.5, y0 = YMIN - 0.5, z0 = -0.5, S = 16, px = [], pz = [], py = [];
-  for (let k = 0; k < NX; k += S) px.push(k);
-  px.push(NX);   // 16ごとの区切り。さいごのはんぱな区画のはしも
-  for (let k = 0; k < NZ; k += S) pz.push(k);
-  pz.push(NZ);
-  for (let k = 0; k < YN; k += S) py.push(k);
-  py.push(YN);
-  for (const a of py) for (const b of pz) v.push(x0, y0 + a, z0 + b, x0 + NX, y0 + a, z0 + b);   // x方向
-  for (const a of px) for (const b of pz) v.push(x0 + a, y0, z0 + b, x0 + a, y0 + YN, z0 + b);   // y方向
-  for (const a of px) for (const b of py) v.push(x0 + a, y0 + b, z0, x0 + a, y0 + b, z0 + NZ);   // z方向
+  const v = [], R = 2, S = 16, lo = -R * S - 0.5, hi = (R + 1) * S - 0.5, ylo = -2 * S - 0.5, yhi = 2 * S - 0.5;
+  for (let a = -R; a <= R + 1; a++) for (let b = -2; b <= 2; b++) {
+    const k = a * S - 0.5, y = b * S - 0.5;
+    v.push(lo, y, k, hi, y, k);   // x方向
+    v.push(k, y, lo, k, y, hi);   // z方向
+  }
+  for (let a = -R; a <= R + 1; a++) for (let b = -R; b <= R + 1; b++) v.push(a * S - 0.5, ylo, b * S - 0.5, a * S - 0.5, yhi, b * S - 0.5);   // y方向
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
   const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xffa51f, transparent: true, opacity: 0.85 }));
@@ -107,25 +98,23 @@ const sunSprite = (() => {
 const world = new World();
 world.spawn = { x: SPAWN.x, y: SPAWN.y, z: SPAWN.z, yaw: 0, pitch: 0 };
 const worldMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
-const offsets = [];
-for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) offsets.push([dx * NX, 0, dz * NZ]);
-const chunkMeshes = [];
-for (let i = 0; i < NCX * NCZ; i++) {
-  chunkMeshes.push(offsets.map((o) => { const m = new THREE.Mesh(new THREE.BufferGeometry(), worldMat); m.position.set(o[0], o[1], o[2]); m.visible = false; scene.add(m); return m; }));
-  world.dirty.add(i);
-}
+const chunkMeshes = new Map();   // 区画のキー → メッシュ(ブロックがある区画だけ)
 function rebuildDirty(budgetMs = Infinity) {
   const t0 = performance.now();
   for (const ci of [...world.dirty]) {
     if (performance.now() - t0 > budgetMs) break;
     world.dirty.delete(ci);
-    const d = buildChunk(world, Math.floor(ci / NCZ), ci % NCZ);
+    const [cx, cz] = ci.split(",").map(Number);
+    const d = buildChunk(world, cx, cz);
+    let m = chunkMeshes.get(ci);
+    if (!d.idx.length) { if (m) { scene.remove(m); m.geometry.dispose(); chunkMeshes.delete(ci); } continue; }
+    if (!m) { m = new THREE.Mesh(new THREE.BufferGeometry(), worldMat); chunkMeshes.set(ci, m); scene.add(m); }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(d.pos, 3));
     g.setAttribute("color", new THREE.BufferAttribute(d.col, 3));
     g.setIndex(new THREE.BufferAttribute(d.idx, 1));
     g.computeBoundingSphere();
-    for (const m of chunkMeshes[ci]) { m.geometry.dispose(); m.geometry = g; m.visible = d.idx.length > 0; }
+    m.geometry.dispose(); m.geometry = g;
   }
 }
 rebuildDirty();
@@ -143,10 +132,18 @@ resize();
 let hud;
 const controls = new Controls({ world, spawn: world.spawn, win: window, doc: document, say: (t) => hud && hud.say(t) });
 const firstPerson = createFirstPerson(THREE, camera, scene, controls);
-const arrows = createArrows(THREE, scene, world, (a, b) => remotes.segHit(a, b), (id) => { if (net.ready()) net.sendHit(id, "arrow"); });
+const arrows = createArrows(THREE, scene, world, (a, b) => remotes.segHit(a, b), (id) => { if (net.ready()) net.sendHit(id, "arrow"); }, (a, b) => buttons.segment(a, b), (b) => buttons.press(b, "arrow"));
 const build = new BuildTool(THREE, scene, world);
-const hall = createHall(THREE, scene, { api: siteApi, getToken });   // 投稿ホール(北): 投稿の箱・リフト
-world.virtual = hall.collider;
+const buttons = createButtons(THREE);   // 世界にうかぶボタン(クリック・矢で押す)
+// 投稿ホール(北)・つぶやきホール(南)・リフト
+const halls = createHalls(THREE, scene, {
+  api: siteApi, getToken, buttons,
+  getMe: () => (user ? { uid: user.uid, name: user.displayName || user.username || "", avatar: user.avatar || "" } : null),
+  say: (t) => hud && hud.say(t),
+  onBack: () => { controls.respawn(); hud.say("一覧にもどりました(はじまりの場所)"); },
+});
+world.virtual = halls.collider;
+Object.defineProperty(world, "voidY", { get: () => halls.voidY });
 const marks = new Marks(THREE, scene);   // 始点ブロック(緑)・終点ブロック(赤)
 const syncMarkHud = () => hud.setMarker(isAdmin ? marks.held() : null);
 const holdingMark = () => !!isAdmin && !!marks.held() && hud.selectedItem() === marks.held();   // 始点/終点ブロックを手に持っている
@@ -240,7 +237,7 @@ function restoreState(u) {
   const num = (v, lo, hi, d) => (Number.isFinite(v) && v >= lo && v <= hi ? v : d);
   if (st && typeof st === "object") {
     const p = controls.p;
-    p.x = num(st.x, -1, NX, p.x); p.y = num(st.y, YMIN - 1, 2000, p.y); p.z = num(st.z, -1, NZ, p.z);
+    p.x = num(st.x, -1e5, 1e5, p.x); p.y = num(st.y, -1e5, 1e5, p.y); p.z = num(st.z, -1e5, 1e5, p.z);
     p.yaw = num(st.yaw, -1000, 1000, p.yaw); p.pitch = num(st.pitch, -1.5707, 1.5707, p.pitch);
     p.vx = p.vy = p.vz = 0; p.ground = false; p.glide = false; p.boost = 0; p.bodyYaw = p.yaw;
     p.fly = !!st.fly && isAdmin;
@@ -674,7 +671,7 @@ document.addEventListener("pointerlockchange", () => {
 document.addEventListener("pointerlockerror", () => { if (!panel) hud.setResume(true); });
 
 canvas.addEventListener("click", () => { if (!panel && !locked) requestLock(); });
-const wrapCell = (c) => [mod(c[0], NX), c[1], mod(c[2], NZ)];
+const wrapCell = (c) => c.slice();   // 世界はループしないので、そのまま
 // ----- 建築・破壊(クリック・長押し) -----
 let lastAct = { key: "", at: 0 };
 const sendEdit = (op, cu, i) => {   // cu: ループしていない通しの座標
@@ -701,6 +698,18 @@ function attack() {
   if (world.raycast(eye, L, h.t, false)) return;
   lastHit = now;
   net.sendHit(h.id, "melee");
+}
+// 十字の先の、うかぶボタンを押す(建築破壊モードでは押さない)。ブロックや箱の壁のむこうのボタンは押せない
+function clickButton() {
+  if (buildMode && isAdmin) return false;
+  const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
+  const h = buttons.pick(eye, L, 90);
+  if (!h) return false;
+  const wv = world.raycast(eye, L, 90, false);
+  if (wv && wv.t < h.t) return false;
+  if (halls.collider.ray(eye, L, h.t) < h.t - 0.05) return false;
+  buttons.press(h.b, "click");
+  return true;
 }
 // 持っているアイテムを使う(右クリック / 長タップ)
 function useItem() {
@@ -773,7 +782,8 @@ window.addEventListener("mousedown", (e) => {
     if (it === "book") useItem();
   } else if (e.button === 0 && !glide) {   // 左クリック: 壊す(建築モード) / なぐる
     if (!buildMode && tryBreakMark()) swingHand();
-    else if (buildMode && isAdmin) buildClick(0); else attack();
+    else if (buildMode && isAdmin) buildClick(0);   // 建築破壊モードでは、建築・破壊だけ
+    else if (clickButton()) swingHand(); else attack();
   }
 });
 window.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -832,7 +842,7 @@ if (isTouch) {
     isBow: () => hud.selectedItem() === "bow",
     bowDown: () => startCharge(),
     bowUp: (cancel) => { if (cancel) cancelCharge(); else releaseBow(); },
-    tap: () => { if (isAdmin && (buildMode || holdingMark())) buildClick(2); else attack(); },
+    tap: () => { if (isAdmin && (buildMode || holdingMark())) buildClick(2); else if (!buildMode && clickButton()) swingHand(); else attack(); },
     longPress: () => { if (!buildMode && tryBreakMark()) swingHand(); else if (buildMode && isAdmin) buildClick(0); else useItem(); },
     menu: () => { if (panel === "menu") setPanel(null); else if (!panel) setPanel("menu"); else setPanel(null); },
     key: (code) => {   // 画面上のキーのボタン: 本物のキーを押したのと同じにする
@@ -864,7 +874,8 @@ function frame(t) {
   const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
   checkLoaded();
-  if (!user || worldReady) { hall.update(dt, controls, !!user && worldReady); controls.update(dt); }   // 読み込みのあいだは、体も動かさない
+  if (!user || worldReady) { halls.update(dt, controls, !!user && worldReady); controls.update(dt); }
+  buttons.update(dt);   // 読み込みのあいだは、体も動かさない
   controls.camera(camera, dt);
   skyDome.position.copy(camera.position);
   sunSprite.position.set(camera.position.x + SUN[0] * 270, camera.position.y + SUN[1] * 270, camera.position.z + SUN[2] * 270);
@@ -884,6 +895,7 @@ function frame(t) {
   marks.update(p);
   remotes.update(dt);
   if (world.dirty.size) rebuildDirty(8);
+  if (chunkGrid.visible) chunkGrid.position.set(Math.floor(Math.round(p.x) / 16) * 16, Math.floor(Math.floor(p.y + 0.5) / 16) * 16, Math.floor(Math.round(p.z) / 16) * 16);
   remotes.setViewer({ x: p.x, y: p.y, z: p.z });
   const dirv = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
   if (panel) { build.outline.visible = build.ghost.visible = build.ghostLine.visible = false; build.target = build.place = null; }
@@ -908,7 +920,7 @@ function frame(t) {
     hud.setDebug([
       `artifact学会。 3D v${VERSION}   ${fps.toFixed(0)} fps`,
       `XYZ: ${p.x.toFixed(3)} / ${(p.y + 0.5).toFixed(3)} / ${p.z.toFixed(3)}   (Yは足があるブロックの高さ。ブロックの上では整数)`,
-      `ブロック: ${mod(Math.round(p.x), NX)} ${Math.floor(p.y + 0.5 + 1e-6)} ${mod(Math.round(p.z), NZ)}   (世界 ${NX}x${NZ}、横はループ・上は空)`,
+      `ブロック: ${Math.round(p.x)} ${Math.floor(p.y + 0.5 + 1e-6)} ${Math.round(p.z)}   (世界はどこまでも広がる)`,
       `向き: ${face}  (yaw ${yawDeg.toFixed(1)} / pitch ${((-p.pitch * 180) / Math.PI).toFixed(1)})`,
       `見ている先: ${look}`,
       `権限: ${isAdmin ? "管理者" : "泳者"}   モード: ${buildMode ? "建築破壊" : "通常"}${buildMode ? `   プレート: ${["自動", "面だけ", "斜めだけ"][build.plateMode]}` : ""}`,
@@ -921,5 +933,5 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { hall, runCommand, marks, arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
+window.__craft = { halls, buttons, clickButton, runCommand, marks, arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });

@@ -1,7 +1,7 @@
 // ゲームの「部屋」。全員の接続を預かり、位置を配る。
 // 各プレイヤーの情報は、接続(WebSocket)にくっつけて持つ(休止から起きても消えない)。
 import { VERSION } from "../site/js/version.js";
-import { NX, NZ, YMIN, YN, BLOCK, ROPE, NAME_MAX, REACH, SPAWN, mod, defaultCell, inRangeY, keyOf, wrapDelta } from "../site/js/shared.js";
+import { YMIN, YN, XZ_MAX, BLOCK, ROPE, NAME_MAX, REACH, SPAWN, defaultCell, inRangeY, inWorld, keyOf } from "../site/js/shared.js";
 import { verifyToken } from "./site.js";
 
 const MAX_PLAYERS = 8;
@@ -18,9 +18,9 @@ function cleanName(s) {
 // 届いた位置・向きを検査して、安全な値にそろえる(世界の外や、数でない値は直す)
 function pose(m, base) {
   return {
-    x: r2(num(m.x, -1, NX, base?.x ?? SPAWN.x)),
-    y: r2(num(m.y, YMIN - 1, 2000, base?.y ?? SPAWN.y)),
-    z: r2(num(m.z, -1, NZ, base?.z ?? SPAWN.z)),
+    x: r2(num(m.x, -1e5, 1e5, base?.x ?? SPAWN.x)),
+    y: r2(num(m.y, -1e5, 1e5, base?.y ?? SPAWN.y)),
+    z: r2(num(m.z, -1e5, 1e5, base?.z ?? SPAWN.z)),
     yaw: r2(num(m.yaw, -1000, 1000, base?.yaw ?? 0)),
     pitch: r2(num(m.pitch, -1.6, 1.6, base?.pitch ?? 0)),
     fly: m.fly === true,
@@ -34,7 +34,7 @@ const posMsg = (a) => ({ t: "pos", id: a.id, x: a.x, y: a.y, z: a.z, yaw: a.yaw,
 
 const SWEEP_MS = 15000;     // 切れた人がいないか、見はる間隔
 const IDLE_MS = 60000;      // これだけ何も届かない人は、退出あつかい(画面からは20秒ごとに ping が届く)
-const WORLD_VER = "hall1";   // 世界の作りが変わったら、ここを変える(古い建築データが消える)
+const WORLD_VER = "void1";   // 世界の作りが変わったら、ここを変える(古い建築データが消える)
 
 export class Room {
   constructor(ctx, env) {
@@ -59,7 +59,7 @@ export class Room {
       const all = await ctx.storage.list({ prefix: "e:" });
       for (const [k, v] of all) {
         const [ex, ey, ez] = k.slice(2).split(",").map(Number);
-        if (!inRangeY(ey) || ex < 0 || ex >= NX || ez < 0 || ez >= NZ) { ctx.storage.delete(k); continue; }   // 世界の範囲が変わる前の古い建築は捨てる
+        if (!inWorld(ex, ey, ez)) { ctx.storage.delete(k); continue; }   // 世界の範囲が変わる前の古い建築は捨てる
         this.edits.set(k.slice(2), v);
       }
     });
@@ -84,9 +84,9 @@ export class Room {
     a.editAt = now;
     ws.serializeAttachment(a);
     const x = Math.floor(Number(m.x)), y = Math.floor(Number(m.y)), z = Math.floor(Number(m.z));
-    if (![x, y, z].every(Number.isFinite) || x < 0 || x >= NX || z < 0 || z >= NZ || !inRangeY(y)) return;
+    if (![x, y, z].every(Number.isFinite) || !inWorld(x, y, z)) return;
     // 手の届く距離(世界のループを考える)
-    const dx = wrapDelta(a.x, x, NX), dz = wrapDelta(a.z, z, NZ), dy = y - (a.y + 1);
+    const dx = x - a.x, dz = z - a.z, dy = y - (a.y + 1);
     if (Math.hypot(dx, dy, dz) > REACH + 3) return;
     const cur = this.cellValue(x, y, z);
     let v = cur;
@@ -116,7 +116,7 @@ export class Room {
     const dx = lo(v[6], v[9]), dy = lo(v[7], v[10]), dz = lo(v[8], v[11]);   // 貼りつけ先は、小さいほうの角から
     const sx = x2 - x1, sy = y2 - y1, sz = z2 - z1;
     const tx = hi(v[6], v[9]) - dx, ty = hi(v[7], v[10]) - dy, tz = hi(v[8], v[11]) - dz;
-    const inW = (x, y, z) => x >= 0 && x < NX && z >= 0 && z < NZ && inRangeY(y);
+    const inW = inWorld;
     if (!inW(x1, y1, z1) || !inW(x2, y2, z2) || !inW(dx, dy, dz) || !inW(dx + tx, dy + ty, dz + tz)) return this.send(ws, { t: "deny", why: "世界の外です(コピー元・貼りつけ先は、世界の中におさめてください)" });
     const vol = (sx + 1) * (sy + 1) * (sz + 1), vol2 = (tx + 1) * (ty + 1) * (tz + 1);
     if (vol !== vol2) return this.send(ws, { t: "deny", why: "体積がちがいます(コピー元 " + vol + "、貼りつけ先 " + vol2 + ")" });
@@ -149,7 +149,7 @@ export class Room {
     const v = ["x1", "y1", "z1", "x2", "y2", "z2"].map((k) => Math.floor(Number(m[k])));
     if (!v.every(Number.isFinite)) return;
     const [x1, x2] = [Math.min(v[0], v[3]), Math.max(v[0], v[3])], [y1, y2] = [Math.min(v[1], v[4]), Math.max(v[1], v[4])], [z1, z2] = [Math.min(v[2], v[5]), Math.max(v[2], v[5])];
-    if (x1 < 0 || x2 >= NX || z1 < 0 || z2 >= NZ || !inRangeY(y1) || !inRangeY(y2)) return this.send(ws, { t: "deny", why: "世界の外です(xは0〜" + (NX - 1) + "、zは0〜" + (NZ - 1) + "、yは" + YMIN + "〜" + (YMIN + YN - 1) + ")" });
+    if (!inWorld(x1, y1, z1) || !inWorld(x2, y2, z2)) return this.send(ws, { t: "deny", why: "世界の外です(yは" + YMIN + "〜" + (YMIN + YN - 1) + "、x・zは-" + XZ_MAX + "〜" + XZ_MAX + ")" });
     const val = m.m === "air" ? 0 : BLOCK;   // air=空気(ブロックもプレートも消す) / block=ブロック
     const vol = (x2 - x1 + 1) * (y2 - y1 + 1) * (z2 - z1 + 1);
     if (vol > 32768) return this.send(ws, { t: "deny", why: "広すぎます(最大32768ブロック。今回は" + vol + ")" });
@@ -165,7 +165,7 @@ export class Room {
     const target = this.players().find((p) => p.a.id === m.id);
     if (!target || target.a.id === a.id) return;
     const T = target.a;
-    const dx = wrapDelta(a.x, T.x, NX), dy = T.y - a.y, dz = wrapDelta(a.z, T.z, NZ);
+    const dx = T.x - a.x, dy = T.y - a.y, dz = T.z - a.z;
     if (Math.hypot(dx, dy, dz) > (kind === "arrow" ? 90 : 5.5)) return;
     a.hitAt = now; ws.serializeAttachment(a);
     // 体力は3秒に1つ、もどる(ここで数え直す)
@@ -294,7 +294,7 @@ export class Room {
       if (!v.every(Number.isFinite)) return;
       const sp = Math.hypot(v[3], v[4], v[5]);
       if (sp < 0.2 || sp > 3.2) return;   // 1tickあたり、最大3ブロック(マイクラと同じ)
-      if (Math.hypot(wrapDelta(a.x, v[0], NX), v[1] - a.y, wrapDelta(a.z, v[2], NZ)) > 6) return;
+      if (Math.hypot(v[0] - a.x, v[1] - a.y, v[2] - a.z) > 6) return;
       a.shotAt = now; ws.serializeAttachment(a);
       this.broadcast({ t: "arrow", id: a.id, x: v[0], y: v[1], z: v[2], vx: v[3], vy: v[4], vz: v[5] }, ws);
     }
