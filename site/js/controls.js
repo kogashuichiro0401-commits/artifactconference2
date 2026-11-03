@@ -14,7 +14,7 @@ export class Controls {
     this.spawn = spawn;
     this.say = say || (() => {});
     this.canFly = false;   // 空中浮遊は管理者だけ
-    this.cfg = { ely: true, rks: true, rkt: 2, rka: 30 };   // エリトラ / ロケット(あり・時間・加速度)
+    this.cfg = { ely: true, rks: true, rkt: 2, rka: 90 };   // エリトラ / ロケット(あり・時間・加速度)
     this.keys = {};
     this.locked = false;
     this.speedMul = 1;             // 移動速度の倍率(設定。1=100%)

@@ -12,6 +12,7 @@ import { BuildTool } from "./build.js";
 import { Marks } from "./marks.js";
 import { createHalls } from "./hall.js";
 import { createButtons } from "./buttons.js";
+import { createWindows } from "./windows.js";
 import { YMIN, YN, BLOCK, REACH, SPAWN, mod, SUN } from "./shared.js";
 import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
@@ -132,7 +133,7 @@ resize();
 let hud;
 const controls = new Controls({ world, spawn: world.spawn, win: window, doc: document, say: (t) => hud && hud.say(t) });
 const firstPerson = createFirstPerson(THREE, camera, scene, controls);
-const arrows = createArrows(THREE, scene, world, (a, b) => remotes.segHit(a, b), (id) => { if (net.ready()) net.sendHit(id, "arrow"); }, (a, b) => buttons.segment(a, b), (b) => buttons.press(b, "arrow"));
+const arrows = createArrows(THREE, scene, world, (a, b) => remotes.segHit(a, b), (id) => { if (net.ready()) net.sendHit(id, "arrow"); }, (a, b) => pressTest(a, b), (h) => h.run());
 const build = new BuildTool(THREE, scene, world);
 const buttons = createButtons(THREE);   // 世界にうかぶボタン(クリック・矢で押す)
 // 投稿ホール(北)・つぶやきホール(南)・リフト
@@ -141,6 +142,16 @@ const halls = createHalls(THREE, scene, {
   getMe: () => (user ? { uid: user.uid, name: user.displayName || user.username || "", avatar: user.avatar || "" } : null),
   say: (t) => hud && hud.say(t),
   onBack: () => { controls.respawn(); hud.say("一覧にもどりました(はじまりの場所)"); },
+  // ウィンドウを出す(windows は、このあとで作る)
+  ui: new Proxy({}, { get: (_, k) => (...a) => wins[k](...a) }),
+});
+// ウィンドウ。出たら、カーソルを出して操作できるようにする(画面をクリックすると、ゲームにもどる。ウィンドウは残る)
+let skipMenu = false;
+const wins = createWindows({
+  api: siteApi, getToken, halls, getMe: () => (user ? { uid: user.uid, name: user.displayName || user.username || "" } : null),
+  say: (t) => hud && hud.say(t),
+  goInto: (id) => { halls.goInto(id, controls); requestLock(); },
+  onOpen: () => { if (locked && !isTouch) { skipMenu = true; exitLock(); } },
 });
 world.virtual = halls.collider;
 Object.defineProperty(world, "voidY", { get: () => halls.voidY });
@@ -308,7 +319,7 @@ const hurtEl = document.getElementById("hurt");
 
 function poseNow() {
   const p = controls.p;
-  return { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly, sneak: p.sneak, glide: p.glide };
+  return { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.pitch, fly: p.fly, sneak: p.sneak, glide: p.glide, lf: halls.myLift() };
 }
 function refreshOnline() {
   let head = "";
@@ -335,7 +346,7 @@ const net = new Net({
     for (const e of m.edits || []) world.set(e[0], e[1], e[2], e[3]);   // みんなが作った建築を反映
     unstick();
     remotes.clear();
-    for (const p of m.players) remotes.add(p);
+    for (const p of m.players) { remotes.add(p); halls.remoteLift(p.id, p.lf || null); }
     if (m.version !== VERSION) updateFound(m.version);   // 古い画面のまま遊んでいる
     forceSend = true; welcomed = true;
     chatMore = !!m.chatMore;
@@ -344,9 +355,9 @@ const net = new Net({
     hpNow = 20; hud.setHealth(20, false);
     refreshOnline();
   },
-  onJoin: (p) => { remotes.add(p); refreshOnline(); logSys((p.name || "だれか") + " が参加しました"); },
-  onLeave: (id, name) => { remotes.remove(id); refreshOnline(); if (name) logSys(name + " が退出しました"); },
-  onPos: (m) => remotes.setPos(m),
+  onJoin: (p) => { remotes.add(p); halls.remoteLift(p.id, p.lf); refreshOnline(); logSys((p.name || "だれか") + " が参加しました"); },
+  onLeave: (id, name) => { remotes.remove(id); halls.remoteLift(id, null); refreshOnline(); if (name) logSys(name + " が退出しました"); },
+  onPos: (m) => { remotes.setPos(m); halls.remoteLift(m.id, m.lf || null); },
   onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
   onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, m.v ? BLOCK : 0); logSys((m.by ? m.by + " が " : "") + m.n + (m.v ? "ブロックをうめました" : "ブロックぶんを空気にしました")); },
   onClone: (m) => {   // 自分の世界の中身を、先に全部読んでから、貼りつける(重なっていてもよい)
@@ -667,6 +678,7 @@ document.addEventListener("pointerlockchange", () => {
   controls.locked = locked;
   if (!locked) { controls.release(); unlockedAt = performance.now(); }
   if (locked && panel) { panel = null; hud.show(null); }
+  if (!locked && skipMenu) { skipMenu = false; hud.setResume(false); return; }   // ウィンドウを出すために、カーソルを出しただけ
   if (!locked && !panel && !cmdOpen) setPanel("menu");
   hud.setResume(!locked && !panel);
 });
@@ -705,13 +717,29 @@ function attack() {
 function clickButton() {
   if (buildMode && isAdmin) return false;
   const p = controls.p, L = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
-  const h = buttons.pick(eye, L, 90);
+  const h = pressAt(eye, L, 90);
   if (!h) return false;
-  const wv = world.raycast(eye, L, 90, false);
-  if (wv && wv.t < h.t) return false;
-  if (halls.collider.ray(eye, L, h.t) < h.t - 0.05) return false;
-  buttons.press(h.b, "click");
+  h.run();
   return true;
+}
+// 光線の先の、押せるもの(うかぶボタン・カードのアイコンや⋮・つぶやき)。ブロックや箱の壁のむこうは押せない
+function pressAt(o, d, maxT) {
+  const b = buttons.pick(o, d, maxT), sp = halls.pickSpot(o, d, maxT);
+  let best = null;
+  if (b) best = { t: b.t, run: () => buttons.press(b.b, "click") };
+  if (sp && (!best || sp.t < best.t - 0.01)) best = { t: sp.t, run: sp.fn };
+  if (!best) return null;
+  const wv = world.raycast(o, d, maxT, false);
+  if (wv && wv.t < best.t) return null;
+  if (halls.collider.ray(o, d, best.t) < best.t - 0.05) return null;
+  return best;
+}
+// 矢: 線分 a→b に、押せるものがあるか
+function pressTest(a, b) {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], len = Math.hypot(d[0], d[1], d[2]);
+  if (len < 1e-6) return null;
+  const h = pressAt(a, [d[0] / len, d[1] / len, d[2] / len], len);
+  return h ? { f: h.t / len, run: h.run } : null;
 }
 // 持っているアイテムを使う(右クリック / 長タップ)
 function useItem() {
@@ -802,7 +830,12 @@ window.addEventListener("keydown", (e) => {
     if (panel && panel !== "login" && performance.now() - unlockedAt > 400) setPanel(null);
     return;
   }
-  if (e.target && e.target.tagName === "INPUT") return;   // 文字を入力している間は、操作キーを使わない
+  if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;   // 文字を入力している間は、操作キーを使わない
+  if (e.shiftKey && (e.code === "ArrowRight" || e.code === "ArrowLeft")) {   // ウィンドウ: Shift+→ 消す / Shift+← もどす
+    e.preventDefault();
+    if (e.code === "ArrowRight") wins.closeTop(); else wins.restore();
+    return;
+  }
   if ((e.code === "Slash" && !e.shiftKey || e.key === "/") && !panel && locked) { e.preventDefault(); openCmd("cmd"); return; }
   if (e.code === "KeyT" && !e.ctrlKey && !e.metaKey && !e.altKey && !panel && locked) { e.preventDefault(); openCmd("chat"); return; }
   if (e.code === "KeyE") {
@@ -836,6 +869,11 @@ function tryFullscreen() {
     if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {});
   } catch (e) { /* 使えない端末ではそのまま */ }
 }
+// スマホの操作で起動したのに、マウスでクリックされた → パソコンなので、パソコンの操作にする(自分でスマホの操作を選んだときは別)
+if (isTouch) window.addEventListener("pointerdown", (e) => {
+  let chosen = null; try { chosen = localStorage.getItem("craft-input"); } catch (er) { /* なし */ }
+  if (e.pointerType === "mouse" && chosen !== "touch") { saveState(); switchInput("pc"); }
+}, true);
 if (isTouch) {
   touch = createTouch({
     controls,

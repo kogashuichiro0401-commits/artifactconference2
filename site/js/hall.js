@@ -1,25 +1,25 @@
 // 投稿ホール(北)と、つぶやきホール(南)。
-//  ・1件が、ひとつの大きな箱(前面 30×30、奥行き 30)。横に3列、上から下へ積む(いちばん上の段が、はじまりの場所と同じ高さ)
-//  ・前面はサイトのカードと同じ。サムネイルの部分だけ、通りぬけて中に入れる(すこし透けている)。それより下は壁
-//  ・中から振り返ると、前面の裏が見える。いちばん奥の壁に、投稿のページ(ツイートは、右の表示)が映る
-//  ・はじまりの板の北と南に、リフト。Shift で下へ、Space で上へ(はじまりの高さまで)。リフトから足を出すと、リフトは消えて、上に新しいのができる
-//  ・並べ替えボタン(人気順・新しい順・古い順)と、ページのボタンは、うかんでいて、クリックか矢で押せる
-// 箱もリフトも、ブロックではなく画面だけの展示物。当たり判定は、ここで持っている(world.virtual)。
+//  ・投稿: 1件が、ひとつの大きな箱(前面 30×30、奥行き 30)。横に3列、上から下へ積む(すきまをあける)
+//    前面はサイトのカードと同じ。サムネイルの部分だけ、通りぬけて中に入れる。中の奥の壁に、投稿のページ
+//  ・つぶやき: 掲示板の左(タイムライン)と同じ形の、大きな縦長の壁。上から下へ1件ずつ
+//  ・はじまりの板の北と南に、リフト。Shift: リフト1枚ぶん前へ出てから下へ。Space: 上へ、もどる
+//  ・はじまりの場所の右に、ななめにうかぶ台: 投稿(ツイートする)ボタンと、並べ替え
+//  ・カードのアイコン・⋮、つぶやき、ページの投稿者などを押すと、ウィンドウが出る(ui.*)
+// 箱・壁・リフトは、ブロックではなく画面だけの展示物。当たり判定は、ここで持っている(world.virtual)。
 import * as SC from "./sitecards.js";
 
-const W = 30, D = 30, ROWH = 30, Y0 = 0.5, PITCH = 33, FRONT = 40.5;   // 前面は、はじまりの場所から 40.5(1段目の上のふちが画面のいちばん上に来る)
-const THUMB = W * 9 / 16;          // サムネイルの高さ(16:9)
-const OPEN_Y = ROWH - THUMB;       // サムネイルの下のはし(床からの高さ)。ここから上だけ通れる
-const MAXN = 150;                  // 1つのホールに並べる数
-const CARD_W = 330, FS = 512;      // カードの幅(サイトのpx)/ 前面の絵の大きさ
-const PAGE_W = 1240, PAGE_H = 1150, PAGE_S = 1.5;   // 奥のページ(サイトのpx)
-const K = W / PAGE_W;              // ページの 1px が何ブロックか
-const NEAR = 120, FAR = 160;       // 前面の絵を作る / 捨てる 距離
-const TEX_PER_FRAME = 2, TEX_MAX = 48;   // 1フレームで作る数 / 同時に持つ数(重くならないように)
-const LIFT_SPEED = 8;
+const W = 30, ROWH = 30, Y0 = 0.5, FRONT = 40.5;   // 前面は、はじまりの場所から 40.5(1段目の上のふちが画面のいちばん上)
+const PITCH_X = 36, PITCH_Y = 33;                  // 箱どうしの間かく(となりとは、すきまをあける)
+const THUMB = W * 9 / 16, OPEN_Y = ROWH - THUMB;   // サムネイル(16:9)の高さ / その下のはし。ここから上だけ通れる
+const MAXN = 150;
+const CARD_W = 330, FS = 512;                      // カードの幅(サイトのpx)/ 前面の絵の大きさ
+const PAGE_W = 1240, PAGE_H = 1150, PAGE_S = 1.5, K = W / PAGE_W;
+const NEAR = 120, FAR = 160, TEX_PER_FRAME = 2, TEX_MAX = 48;
+const LIFT_V = 24, LIFT_SLIDE = 3;
+// つぶやきの壁
+const TW_W = 600, TW_S = 1.6, TW_K = 0.08;         // サイトのpx / 絵の倍率 / 1pxが何ブロック(600px = 48ブロック)
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
-// 箱の形(箱の原点 = 前面の、下の真ん中。+z が外(はじまりの場所の方)、中は -z)
 const SHELL = [
   [-16, -0.5, -31, -15, ROWH, 0],      // 左の壁
   [15, -0.5, -31, 16, ROWH, 0],        // 右の壁
@@ -27,34 +27,38 @@ const SHELL = [
   [-15, -0.5, -30, 15, 0, 0],          // 床
   [-15, ROWH - 0.5, -30, 15, ROWH, 0], // 天井
 ];
-const FRONT_WALL = [-15, -0.5, -0.25, 15, OPEN_Y, 0.25];   // 前面の、サムネより下(壁)
+const FRONT_WALL = [-15, -0.5, -0.25, 15, OPEN_Y, 0.25];
 
-export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, onBack }) {
-  // ---- 共通の形 ----
-  const shellGeo = (() => {   // 壁・床・天井を1つの形にまとめる(描く回数を減らす)
-    const pos = [], nor = [];
+export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, onBack, ui }) {
+  // ---- 箱の形: 壁・床・天井を1つにまとめ、面の向きで少しだけ明るさを変える(色はサイトの白) ----
+  const shellGeo = (() => {
+    const pos = [], col = [];
     for (const b of SHELL) {
       const g = new THREE.BoxGeometry(b[3] - b[0], b[4] - b[1], b[5] - b[2]).toNonIndexed();
       g.translate((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2);
-      pos.push(...g.attributes.position.array); nor.push(...g.attributes.normal.array);
+      const P = g.attributes.position.array, N = g.attributes.normal.array;
+      for (let i = 0; i < P.length; i += 3) {
+        pos.push(P[i], P[i + 1], P[i + 2]);
+        const n = [N[i], N[i + 1], N[i + 2]];
+        const v = n[1] > 0.5 ? 1 : n[1] < -0.5 ? 0.86 : Math.abs(n[0]) > 0.5 ? 0.95 : 0.91;
+        col.push(v, v, v);
+      }
       g.dispose();
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
     return g;
   })();
-  const shellMat = new THREE.MeshLambertMaterial({ color: 0xf4f4f6, emissive: 0x5a5c63 });
+  const shellMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
   const frontGeo = new THREE.PlaneGeometry(W, ROWH);
-  const blankCv = document.createElement("canvas"); blankCv.width = blankCv.height = 4;
-  { const c = blankCv.getContext("2d"); c.fillStyle = "#fff"; c.fillRect(0, 0, 4, 4); }
 
-  const avatars = new Map();   // uid → Image
+  const avatars = new Map();
   function avatarImg(uid, src, cb) {
     if (!src || typeof src !== "string" || !src.startsWith("data:image/")) return null;
     const e = avatars.get(uid);
-    if (e) { if (e.ok) return e.img; e.wait.push(cb); return null; }
-    const n = { ok: false, img: new Image(), wait: [cb] };
+    if (e) { if (e.ok) return e.img; if (cb) e.wait.push(cb); return null; }
+    const n = { ok: false, img: new Image(), wait: cb ? [cb] : [] };
     avatars.set(uid, n);
     n.img.onload = () => { n.ok = true; n.wait.forEach((f) => f()); n.wait = []; };
     n.img.src = src;
@@ -62,69 +66,70 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
   }
 
   // ==== ホール ====
-  function makeHall(kind, s) {   // s = -1(北) / +1(南)
-    const H = { kind, s, items: [], byId: new Map(), sort: "new", rows: 1, data: [], users: {}, extra: {}, images: new Map(), asked: new Set(), anim: null, seg: [] };
-    const root = new THREE.Group(); scene.add(root); H.root = root;
-    // 箱の原点(ワールド)。列 0 は、はじまりの場所から見て左
-    H.slotPos = (i) => { const row = Math.floor(i / 3), col = i % 3; return { u: (col - 1) * PITCH, y: Y0 - row * ROWH }; };
+  function makeHall(kind, s) {
+    const H = { kind, s, items: [], sort: "new", rows: 1, data: [], users: {}, extra: {}, images: new Map(), asked: new Set(), anim: null, seg: [], height: 30 };
+    H.root = new THREE.Group(); scene.add(H.root);
+    H.slotPos = (i) => { const row = Math.floor(i / 3), col = i % 3; return { u: (col - 1) * PITCH_X, y: Y0 - row * PITCH_Y }; };
     H.world = (u, y) => [s < 0 ? u : -u, y, s * FRONT];
-    H.bottom = () => Y0 - (H.rows - 1) * ROWH;
-
-    // -- 並べ替えボタン(人気順・新しい順・古い順)。サイトと同じく、一覧の上にうかぶ(いちばん上の段の、すぐ上) --
-    {
-      const seg = new THREE.Group();
-      seg.position.set(0, Y0 + ROWH + 2.6, s * (FRONT - 1)); seg.rotation.y = s < 0 ? 0 : Math.PI;
-      root.add(seg);
-      const opts = [["popular", "人気順"], ["new", "新しい順"], ["old", "古い順"]];
-      const bw = 6.4, bh = 3.2, ppb = 48;
-      // 台(ボタンがしずみこむ板)。サイトの .seg と同じ、丸い端の灰色
-      const base = new THREE.Mesh(new THREE.BoxGeometry(bw * 3 - bh * 1.1, bh * 0.9, 0.2), new THREE.MeshLambertMaterial({ color: 0xd8d8d8, emissive: 0x404040 }));
-      base.position.z = -0.1; seg.add(base);
-      opts.forEach(([key, label], i) => {
-        const b = buttons.add({ parent: seg, x: (i - 1) * bw, y: 0, z: 0, w: bw - 0.06, h: bh, pxPerBlock: ppb, cssH: 44, sticky: true,
-          face: { label, style: i === 0 ? "sort-l" : i === 2 ? "sort-r" : "sort", pressed: key === H.sort },
-          onPress: () => setSort(H, key) });
-        H.seg.push([key, b]);
-      });
-    }
+    H.bottom = () => (kind === "post" ? Y0 - (H.rows - 1) * PITCH_Y : Y0 + ROWH - H.height);
     return H;
   }
   const halls = [makeHall("post", -1), makeHall("tweet", 1)];
+  const [PH, TH] = halls;
 
-  // ---- 箱を作る・捨てる ----
+  // ==== はじまりの場所の右の台(投稿/ツイートするボタン + 並べ替え) ====
+  function makeKiosk(H) {
+    const s = H.s, g = new THREE.Group();
+    const cx = -s * 4.6, cz = s * 1.6;   // 北を向いたときの右 = +x、南を向いたときの右 = -x
+    g.position.set(cx, 1.75, cz);
+    g.rotation.order = "YXZ";
+    g.rotation.y = Math.atan2(0 - cx, 0 - cz); g.rotation.x = -0.18;   // はじまりの場所の方へ、ななめに向ける
+    scene.add(g);
+    const ppb = 110, bh = 0.62, bw = 1.25;
+    const main = H.kind === "post"
+      ? { label: "投稿", icon: "plus", style: "pill", onPress: () => ui.postForm() }
+      : { label: "ツイートする", icon: "edit", style: "primary", onPress: () => ui.tweetForm() };
+    buttons.add({ parent: g, x: 0, y: 0.5, z: 0, w: H.kind === "post" ? 1.5 : 2.4, h: bh * 1.05, pxPerBlock: ppb, cssH: 44, face: main, onPress: main.onPress });
+    const opts = H.kind === "post" ? [["popular", "人気順"], ["new", "新しい順"], ["old", "古い順"]] : [["new", "新しい順"], ["popular", "人気順"], ["old", "古い順"]];
+    opts.forEach(([key, label], i) => {
+      const b = buttons.add({ parent: g, x: (i - 1) * bw, y: -0.32, z: 0, w: bw - 0.02, h: bh, pxPerBlock: ppb, cssH: 44, sticky: true,
+        face: { label, style: i === 0 ? "sort-l" : i === 2 ? "sort-r" : "sort", pressed: key === H.sort },
+        onPress: () => setSort(H, key) });
+      H.seg.push([key, b]);
+    });
+  }
+  halls.forEach(makeKiosk);
+
+  // ======== 投稿の箱 ========
   function makeItem(H, d, i) {
     const g = new THREE.Group();
     g.rotation.y = H.s < 0 ? 0 : Math.PI;
-    const shell = new THREE.Mesh(shellGeo, shellMat);
-    g.add(shell);
-    const it = { H, d, id: d.id, slot: i, cur: H.slotPos(i), from: null, g, cv: null, tex: null, texIn: null, front: null, inner: null, page: null };
-    // 前面(外向き)と、その裏(中から見る。裏がわ向きの板なので、中からも字が正しく読める)
-    const matOut = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, toneMapped: false });
-    const matIn = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, toneMapped: false });
-    it.front = new THREE.Mesh(frontGeo, matOut); it.front.position.set(0, ROWH / 2, 0.03); it.front.renderOrder = 3;
-    it.inner = new THREE.Mesh(frontGeo, matIn); it.inner.position.set(0, ROWH / 2, -0.03); it.inner.rotation.y = Math.PI; it.inner.renderOrder = 3;
+    g.add(new THREE.Mesh(shellGeo, shellMat));
+    const it = { H, d, id: d.id, slot: i, cur: H.slotPos(i), g, cv: null, tex: null, front: null, inner: null, page: null, dist: 1e9 };
+    const mk = () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, toneMapped: false });
+    it.front = new THREE.Mesh(frontGeo, mk()); it.front.position.set(0, ROWH / 2, 0.03); it.front.renderOrder = 3;
+    it.inner = new THREE.Mesh(frontGeo, mk()); it.inner.position.set(0, ROWH / 2, -0.03); it.inner.rotation.y = Math.PI; it.inner.renderOrder = 3;
+    it.front.userData.item = it; it.inner.userData.item = it;
     g.add(it.front, it.inner);
     H.root.add(g);
-    placeItem(it);
+    placeItem(it, 0);
     return it;
   }
-  function placeItem(it) {
+  function placeItem(it, pull) {
     const w = it.H.world(it.cur.u, it.cur.y);
-    it.g.position.set(w[0], w[1], w[2]);
+    it.g.position.set(w[0], w[1], w[2] + it.H.s * -(pull || 0));
   }
   function freeTex(it) {
     if (!it.cv) return;
     it.front.material.map = null; it.inner.material.map = null; it.front.material.needsUpdate = it.inner.material.needsUpdate = true;
-    it.tex.dispose(); it.texIn.dispose(); it.cv = it.tex = it.texIn = null;
+    it.tex.dispose(); it.cv = it.tex = null;
   }
   function dropItem(it) { freeTex(it); freePage(it); it.H.root.remove(it.g); it.front.material.dispose(); it.inner.material.dispose(); }
-  // 前面の絵(近づいたときだけ作る)
   function ensureTex(it) {
     if (it.cv) return;
     it.cv = document.createElement("canvas"); it.cv.width = it.cv.height = FS;
     it.tex = new THREE.CanvasTexture(it.cv); it.tex.generateMipmaps = false; it.tex.minFilter = THREE.LinearFilter; it.tex.anisotropy = 4;
-    it.texIn = new THREE.CanvasTexture(it.cv); it.texIn.generateMipmaps = false; it.texIn.minFilter = THREE.LinearFilter; it.texIn.anisotropy = 4;
-    it.front.material.map = it.tex; it.inner.material.map = it.texIn;
+    it.front.material.map = it.tex; it.inner.material.map = it.tex;
     it.front.material.needsUpdate = it.inner.material.needsUpdate = true;
     drawFront(it);
   }
@@ -132,48 +137,30 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
   function cardInfo(H, d, it) {
     const u = H.users[d.uid] || {};
     const info = { avatar: avatarImg(d.uid, u.avatar, redraw(it)), handle: u.handle || "", menu: true, thumbAlpha: 0.5, name: u.name || d.author || "チャンネル" };
-    if (H.kind === "post") {
-      const ex = H.extra;
-      info.kids = H.data.some((x) => x.parentId === d.id);
-      const par = d.parentId ? H.data.find((x) => x.id === d.parentId) : null;
-      info.parentTitle = par ? par.title : "";
-      info.subs = (ex.subCounts || {})[d.uid] || 0;
-      info.rx = (ex.myRx || {})[d.id] || ""; info.saved = !!(ex.mySaves || {})[d.id];
-      info.subbed = (ex.mySubs || []).indexOf(d.uid) >= 0;
-      const me = getMe(); info.mine = !!me && me.uid === d.uid;
-    }
-    // サムネ: 投稿者の画像があればそれ、なければサイトと同じ自動の絵
+    const ex = H.extra;
+    info.kids = H.data.some((x) => x.parentId === d.id);
+    const par = d.parentId ? H.data.find((x) => x.id === d.parentId) : null;
+    info.parentTitle = par ? par.title : "";
+    info.subs = (ex.subCounts || {})[d.uid] || 0;
+    info.rx = (ex.myRx || {})[d.id] || ""; info.saved = !!(ex.mySaves || {})[d.id];
+    info.subbed = (ex.mySubs || []).indexOf(d.uid) >= 0;
+    const me = getMe(); info.mine = !!me && me.uid === d.uid;
     const img = H.images.get(d.id);
     if (img) info.thumb = img;
     else {
-      const p = H.kind === "post" ? d : { id: d.id, url: d.id, title: String(d.text || "").replace(/\s+/g, " ").slice(0, 40) || "つぶやき" };
       let sync = true;
-      SC.coverImage(p, (im) => {
-        it._cover = im; info.thumb = im;
-        if (!sync && !H.images.get(d.id)) { if (it.cv) drawFront(it); if (it.page) drawPage(it); }   // あとから読めたときだけ描きなおす
-      });
+      SC.coverImage(d, (im) => { it._cover = im; info.thumb = im; if (!sync && !H.images.get(d.id)) { if (it.cv) drawFront(it); if (it.page) drawPage(it); } });
       sync = false;
       if (!info.thumb) info.thumb = it._cover || null;
     }
     return info;
   }
   function drawFront(it) {
-    const H = it.H, d = it.d, c = it.cv.getContext("2d"), S = FS / CARD_W;
-    const info = cardInfo(H, d, it);
-    if (H.kind === "post") SC.drawPostCard(c, d, info, CARD_W, S);
-    else {
-      // つぶやき: 上に 16:9 のサムネ(画像があれば画像、なければ自動の絵)、その下に、掲示板の1件
-      c.clearRect(0, 0, FS, FS);
-      const th = CARD_W * 9 / 16 * S;
-      c.save(); SC.rr(c, 0, 0, FS, th, 12 * S); c.clip(); c.globalAlpha = 0.5; c.fillStyle = SC.C.surface; c.fillRect(0, 0, FS, th);
-      if (info.thumb) SC.drawCover(c, info.thumb, 0, 0, FS, th); c.restore(); c.globalAlpha = 1;
-      c.fillStyle = SC.C.bg; c.fillRect(0, th, FS, FS - th);
-      SC.drawTweet(c, d, info, 0, CARD_W * 9 / 16, CARD_W, S, false);
-    }
-    it.tex.needsUpdate = true; it.texIn.needsUpdate = true;
+    const c = it.cv.getContext("2d");
+    SC.drawPostCard(c, it.d, cardInfo(it.H, it.d, it), CARD_W, FS / CARD_W);
+    it.tex.needsUpdate = true;
   }
-
-  // ---- 奥の壁のページ(中に入ったときだけ) ----
+  // ---- 奥の壁のページ ----
   function ensurePage(it) {
     if (it.page) return;
     const cv = document.createElement("canvas"); cv.width = PAGE_W * PAGE_S; cv.height = PAGE_H * PAGE_S;
@@ -181,10 +168,11 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(W, PAGE_H * K), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, fog: false }));
     const top = ROWH - 1.2;
     mesh.position.set(0, top - PAGE_H * K / 2, -30 + 0.02);
+    mesh.userData.page = it;
     const grp = new THREE.Group(); grp.add(mesh); it.g.add(grp);
-    it.page = { cv, tex, mesh, grp, top, btns: [], comments: null, key: "" };
+    it.page = { cv, tex, mesh, grp, top, btns: [], spots: [], comments: null, key: "" };
     drawPage(it);
-    if (it.H.kind === "post") loadComments(it);
+    loadComments(it);
   }
   function freePage(it) {
     if (!it.page) return;
@@ -193,31 +181,20 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
     it.page = null;
   }
   function drawPage(it) {
-    const H = it.H, d = it.d, pg = it.page, c = pg.cv.getContext("2d"), S = PAGE_S;
+    const H = it.H, d = it.d, pg = it.page, c = pg.cv.getContext("2d");
     const info = cardInfo(H, d, it);
-    let btns;
-    if (H.kind === "post") {
-      const me = getMe();
-      info.me = me ? { name: me.name, uid: me.uid, avatar: me.avatar ? avatarImg(me.uid, me.avatar, redraw(it)) : null } : null;
-      info.comments = pg.comments ? pg.comments.map((m) => Object.assign({}, m, { avatar: avatarImg(m.uid, m.avatarSrc, redraw(it)) })) : null;
-      info.commentsErr = pg.commentsErr;
-      btns = SC.drawWatchPage(c, d, info, PAGE_W, S).btns;
-    } else {
-      // つぶやき: 右の表示(戻るボタン + 1件をくわしく)
-      c.fillStyle = SC.C.bg; c.fillRect(0, 0, pg.cv.width, pg.cv.height);
-      c.font = `700 ${15 * S}px ${SC.FONT}`;
-      const backW = 20 + 18 + 8 + c.measureText("一覧にもどる").width / S + 20;
-      btns = [{ id: "back", x: 0, y: 0, w: backW, h: 44, label: "一覧にもどる", icon: "back", style: "btn" }];
-      const img = H.images.get(d.id);
-      SC.drawTweet(c, d, Object.assign({}, info, { image: img, showImage: !!img }), 0, 58, PAGE_W * 0.62, S, true);
-    }
-    // うかぶボタン(形が変わったときだけ作りなおす)
-    const key = btns.map((b) => b.id + b.label + (b.pressed ? 1 : 0) + Math.round(b.x) + "," + Math.round(b.y)).join("|");
+    const me = getMe();
+    info.me = me ? { name: me.name, uid: me.uid, avatar: me.avatar ? avatarImg(me.uid, me.avatar, redraw(it)) : null } : null;
+    info.comments = pg.comments ? pg.comments.map((m) => Object.assign({}, m, { avatar: avatarImg(m.uid, m.avatarSrc, redraw(it)) })) : null;
+    info.commentsErr = pg.commentsErr;
+    const r = SC.drawWatchPage(c, d, info, PAGE_W, PAGE_S);
+    pg.spots = r.spots;
+    const key = r.btns.map((b) => b.id + b.label + (b.pressed ? 1 : 0) + Math.round(b.x) + "," + Math.round(b.y)).join("|");
     if (key !== pg.key) {
       pg.key = key;
       for (const b of pg.btns) b.dispose();
-      pg.btns = btns.map((b) => buttons.add({
-        parent: pg.grp, x: -W / 2 + (b.x + b.w / 2) * K, y: pg.top - (b.y + b.h / 2) * K, z: -30 + 0.06,
+      pg.btns = r.btns.map((b) => buttons.add({
+        parent: pg.grp, x: -W / 2 + (b.x + b.w / 2) * K, y: pg.top - (b.y + b.h / 2) * K, z: -30 + 0.04,
         w: b.w * K, h: b.h * K, pxPerBlock: PAGE_S / K, cssH: b.h,
         face: { label: b.label, icon: b.icon, style: b.style, pressed: b.pressed },
         onPress: () => pageAction(it, b.id),
@@ -236,36 +213,67 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
     } catch (e) { if (it.page) it.page.commentsErr = "コメントを読み込めませんでした"; }
     if (it.page) drawPage(it);
   }
-  // ページのボタンのはたらき
-  async function pageAction(it, id) {
+  function pageAction(it, id) {
     const d = it.d;
     if (id === "back") { onBack(); return; }
     if (id === "go") {
-      if (d.kind === "file") {
-        const fl = d.files && d.files.length ? d.files : [{ name: d.fileName }];
-        if (fl.length > 1) { say("ファイルが" + fl.length + "個あります。どれを保存するか選ぶウィンドウは、次の更新で作ります"); return; }
-        say("ダウンロード中…");
-        try {
-          const r = await api({ action: "downloadFile", token: getToken(), id: d.id, index: 0 });
-          if (!r || !r.ok || typeof r.data !== "string") { say((r && r.message) || "ダウンロードできませんでした"); return; }
-          const bin = atob(r.data), bytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" })), a = document.createElement("a");
-          a.href = url; a.download = r.name || fl[0].name || "file"; document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 30000);
-          say("ダウンロードしました: " + (r.name || ""));
-        } catch (e) { say("ダウンロードできませんでした"); }
-        return;
-      }
+      if (d.kind === "file") { ui.download(d); return; }
       if (d.url) { const w = window.open(d.url, "_blank", "noopener"); if (!w) say("新しいタブを開けませんでした(ブラウザにブロックされました)"); }
       return;
     }
+    if (id === "dots") { ui.postMenu(d); return; }
+    if (id === "share") { ui.share(d); return; }
     say("このボタンは、まだ3Dの中では使えません");
   }
 
-  // ---- データ ----
+  // ======== つぶやきの壁(掲示板の左と同じ) ========
+  function layoutTweets(H, list) {
+    for (const it of H.items) { H.root.remove(it.mesh); it.mesh.geometry.dispose(); it.mesh.material.dispose(); if (it.tex) it.tex.dispose(); }
+    H.items = [];
+    let y = 0;
+    const pinned = H.data.find((t) => t.pinned);
+    const order = (pinned ? [pinned] : []).concat(list.filter((t) => !t.pinned));
+    for (const t of order) {
+      const u = H.users[t.uid] || {};
+      const info = { name: u.name || "チャンネル", handle: u.handle || "", label: t === pinned ? "固定されたツイート" : "", sel: t === pinned, image: H.images.get(t.id) || null };
+      const hcss = SC.drawTweetItem(null, t, info, 0, 0, TW_W, 1);
+      const it = { H, d: t, id: t.id, y, hcss, info, mesh: null, cv: null, tex: null, dist: 1e9 };
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(TW_W * TW_K, hcss * TW_K), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+      const top = Y0 + ROWH - y * TW_K;
+      mesh.position.set(0, top - hcss * TW_K / 2, H.s * FRONT);
+      mesh.rotation.y = H.s < 0 ? 0 : Math.PI;
+      mesh.userData.tweet = it;
+      it.mesh = mesh; it.top = top;
+      H.root.add(mesh);
+      H.items.push(it);
+      y += hcss;
+    }
+    H.height = Math.max(30, y * TW_K + 2);
+    H.wall.scale.set(1, H.height, 1); H.wall.position.set(0, Y0 + ROWH - H.height / 2, H.s * (FRONT + 0.3));
+  }
+  function ensureTweetTex(it) {
+    if (it.cv) return;
+    it.cv = document.createElement("canvas"); it.cv.width = TW_W * TW_S; it.cv.height = Math.ceil(it.hcss * TW_S);
+    it.tex = new THREE.CanvasTexture(it.cv); it.tex.generateMipmaps = false; it.tex.minFilter = THREE.LinearFilter; it.tex.anisotropy = 4;
+    it.mesh.material.map = it.tex; it.mesh.material.needsUpdate = true;
+    drawTweetTex(it);
+  }
+  function drawTweetTex(it) {
+    const c = it.cv.getContext("2d"), H = it.H, u = H.users[it.d.uid] || {};
+    c.fillStyle = SC.C.bg; c.fillRect(0, 0, it.cv.width, it.cv.height);
+    it.info.avatar = avatarImg(it.d.uid, u.avatar, () => { if (it.cv) drawTweetTex(it); });
+    it.info.image = H.images.get(it.d.id) || null;
+    SC.drawTweetItem(c, it.d, it.info, 0, 0, TW_W, TW_S);
+    it.tex.needsUpdate = true;
+  }
+  function freeTweetTex(it) { if (!it.cv) return; it.mesh.material.map = null; it.mesh.material.needsUpdate = true; it.tex.dispose(); it.cv = it.tex = null; }
+  // 壁の裏(白い板)
+  TH.wall = new THREE.Mesh(new THREE.BoxGeometry(TW_W * TW_K + 2, 1, 0.5), new THREE.MeshBasicMaterial({ color: 0xf2f2f2 }));
+  TH.root.add(TH.wall);
+
+  // ======== データ ========
   function layout(H, list) {
-    // 前と同じものは残し(並べ替えのアニメーションのため)、ないものは捨てる
+    if (H.kind === "tweet") { layoutTweets(H, list); return; }
     const keep = new Map(H.items.map((it) => [it.id, it]));
     const next = [];
     list.forEach((d, i) => {
@@ -280,52 +288,40 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
   }
   function sorted(H) {
     const a = H.data.slice();
-    if (H.kind === "post") {
-      if (H.sort === "old") a.sort((x, y) => x.createdAt - y.createdAt);
-      else if (H.sort === "popular") a.sort((x, y) => (y.views + y.clicks) - (x.views + x.clicks) || y.createdAt - x.createdAt);
-      else a.sort((x, y) => y.createdAt - x.createdAt);
-    } else {
-      const pop = (t) => t.likes + t.views + t.rts + t.replies;
-      if (H.sort === "old") a.sort((x, y) => x.createdAt - y.createdAt);
-      else if (H.sort === "popular") a.sort((x, y) => pop(y) - pop(x) || y.createdAt - x.createdAt);
-      else a.sort((x, y) => y.createdAt - x.createdAt);
-    }
+    const pop = H.kind === "post" ? (x) => x.views + x.clicks : (t) => t.likes + t.views + t.rts + t.replies;
+    if (H.sort === "old") a.sort((x, y) => x.createdAt - y.createdAt);
+    else if (H.sort === "popular") a.sort((x, y) => pop(y) - pop(x) || y.createdAt - x.createdAt);
+    else a.sort((x, y) => y.createdAt - x.createdAt);
     return a;
   }
   function setSort(H, key) {
     for (const [k, b] of H.seg) b.setPressed(k === key);   // いちばん新しく押されたボタンが優先
     if (H.sort === key) return;
     H.sort = key;
-    layout(H, sorted(H));
+    layout(H, sorted(H).slice(0, MAXN));
   }
-  // 並べ替えのアニメーション: 手前に引き出す → 新しい場所へ → 奥へもどす(加減速つき)
+  // 並べ替え: すこしだけ手前に出ながら、加減速して新しい場所へ
   function startAnim(H) {
     for (const it of H.items) { it.from = Object.assign({}, it.cur); it.to = H.slotPos(it.slot); }
     const moving = H.items.some((it) => it.from.u !== it.to.u || it.from.y !== it.to.y);
-    H.anim = moving ? { t: 0, dur: 2.2 } : null;
-    if (!moving) for (const it of H.items) { it.cur = it.to; it.pull = 0; placeItem(it); }
+    H.anim = moving ? { t: 0, dur: 1.6 } : null;
+    if (!moving) for (const it of H.items) { it.cur = it.to; placeItem(it, 0); }
   }
   function stepAnim(H, dt, ctl) {
     if (!H.anim) return;
     H.anim.t += dt / H.anim.dur;
-    const t = Math.min(1, H.anim.t);
+    const t = Math.min(1, H.anim.t), m = ease(t), pull = Math.sin(Math.PI * t) * 2.5;
     for (const it of H.items) {
       const same = it.from.u === it.to.u && it.from.y === it.to.y;
       const old = it.g.position.clone();
-      // 引き出す量(0〜1〜0)と、移動
-      const pull = same ? 0 : t < 0.25 ? ease(t / 0.25) : t > 0.75 ? ease((1 - t) / 0.25) : 1;
-      const m = same ? 1 : t <= 0.25 ? 0 : t >= 0.75 ? 1 : ease((t - 0.25) / 0.5);
       it.cur = { u: it.from.u + (it.to.u - it.from.u) * m, y: it.from.y + (it.to.y - it.from.y) * m };
-      it.pull = pull * 12;
-      placeItem(it);
-      it.g.position.z += H.s * -it.pull;   // 手前へ(はじまりの場所の方へ)
-      // 中にいる人は、いっしょに運ぶ
+      placeItem(it, same ? 0 : pull);
       if (focus && focus.it === it) { ctl.p.x += it.g.position.x - old.x; ctl.p.y += it.g.position.y - old.y; ctl.p.z += it.g.position.z - old.z; }
     }
-    if (t >= 1) { H.anim = null; for (const it of H.items) { it.cur = it.to; it.pull = 0; placeItem(it); } }
+    if (t >= 1) { H.anim = null; for (const it of H.items) { it.cur = it.to; placeItem(it, 0); } }
   }
   function setData(kind, list, users, extra) {
-    const H = halls.find((h) => h.kind === kind);
+    const H = kind === "post" ? PH : TH;
     H.users = users || {}; H.extra = extra || {};
     H.data = (list || []).slice(0, 2000);
     layout(H, sorted(H).slice(0, MAXN));
@@ -338,23 +334,29 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
       try {
         const r = await api(H.kind === "post" ? { action: "getThumbs", token: getToken(), ids: part } : { action: "getTweetImages", token: getToken(), ids: part });
         const got = r && r.ok ? (H.kind === "post" ? r.thumbs : r.images) || {} : {};
+        let changed = false;
         for (const id of Object.keys(got)) {
           const src = got[id];
           if (typeof src !== "string" || !src.startsWith("data:image/")) continue;
           const img = new Image();
-          img.onload = () => { H.images.set(id, img); const it = H.items.find((x) => x.id === id); if (it) { if (it.cv) drawFront(it); if (it.page) drawPage(it); } };
-          img.src = src;
+          img.onload = () => {
+            H.images.set(id, img);
+            if (H.kind === "post") { const it = H.items.find((x) => x.id === id); if (it) { if (it.cv) drawFront(it); if (it.page) drawPage(it); } }
+            else { clearTimeout(H.relayT); H.relayT = setTimeout(() => layout(H, sorted(H).slice(0, MAXN)), 200); }   // 画像のぶん高さが変わる
+          };
+          img.src = src; changed = true;
         }
-      } catch (e) { /* 読めなくても、自動の絵で出る */ }
+      } catch (e) { /* 読めなくても出る */ }
     }
   }
-  let busy = false, refreshT = 0;
+  let busy = false, refreshT = 0, categories = [];
   async function refresh() {
     if (busy) return; busy = true;
     try {
       const token = getToken();
       const [a, b] = await Promise.all([api({ action: "list", token }), api({ action: "listTweets", token })]);
       if (a && a.ok) {
+        categories = a.categories || categories;
         const posts = (a.posts || []).filter((p) => !p.priv && !p.adminHidden && !p.needChange);
         const users = {}; for (const [k, v] of Object.entries(a.users || {})) users[k] = { name: v.name, avatar: v.avatar, handle: v.handle };
         setData("post", posts, users, { subCounts: a.subCounts, myRx: a.myRx, mySaves: a.mySaves, mySubs: a.mySubs });
@@ -364,25 +366,28 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
     busy = false;
   }
 
-  // ==== リフト(北と南。はじまりの板のとなり) ====
+  // ======== リフト(北と南) ========
+  const liftGeo = new THREE.BoxGeometry(3, 1, 3);
+  const liftMat = new THREE.MeshLambertMaterial({ color: 0xfff6cf, emissive: 0x6b6340, transparent: true, opacity: 0.62, depthWrite: false });
+  function liftMesh() { const m = new THREE.Mesh(liftGeo, liftMat); m.renderOrder = 2; m.add(new THREE.LineSegments(new THREE.EdgesGeometry(liftGeo), new THREE.LineBasicMaterial({ color: 0xb8a24a, transparent: true, opacity: 0.8 }))); scene.add(m); return m; }
   function makeLift(H) {
-    const s = H.s, L = { H, x0: -1.5, x1: 1.5, z0: s < 0 ? -5.5 : 2.5, z1: s < 0 ? -2.5 : 5.5, top: Y0, rider: false };
-    const g = new THREE.Group(); scene.add(g);
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 3), new THREE.MeshLambertMaterial({ color: 0xfff4c2, emissive: 0x6b5d1c }));
-    slab.add(new THREE.LineSegments(new THREE.EdgesGeometry(slab.geometry), new THREE.LineBasicMaterial({ color: 0x8a6a00 })));
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1, 0.12), new THREE.MeshBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.6 }));
-    g.add(slab, rail); g.position.set(0, 0, (L.z0 + L.z1) / 2);
-    L.place = () => {
-      slab.position.y = L.top - 0.25;
-      const bottom = H.bottom(), h = Math.max(0.1, Y0 - bottom);
-      rail.scale.set(1, h, 1); rail.position.set(s < 0 ? 0 : 0, bottom + h / 2, s * 1.6);   // 下まで続くレール(行ける深さの目印)
-    };
+    const L = { H, s: H.s, slide: 0, top: Y0, rider: false, mesh: liftMesh() };
+    L.box = () => { const zn = L.s * (2.5 + L.slide), zf = L.s * (5.5 + L.slide); return [-1.5, L.top - 1, Math.min(zn, zf), 1.5, L.top, Math.max(zn, zf)]; };
+    L.place = () => { const b = L.box(); L.mesh.position.set(0, L.top - 0.5, (b[2] + b[5]) / 2); };
     L.place();
     return L;
   }
   const lifts = halls.map(makeLift);
+  // ほかの人のリフト(見えるけれど、さわれない)
+  const ghosts = new Map();   // id → { mesh, cur:[s,slide,top], to }
+  function remoteLift(id, lf) {
+    let g = ghosts.get(id);
+    if (!lf) { if (g) { scene.remove(g.mesh); ghosts.delete(id); } return; }
+    if (!g) { g = { mesh: liftMesh(), cur: lf.slice(), to: lf.slice() }; ghosts.set(id, g); }
+    g.to = lf.slice();
+  }
 
-  // ==== 当たり判定 ====
+  // ======== 当たり判定 ========
   const HW = 0.3;
   function worldBoxes(it, out) {
     const o = it.g.position, rot = it.H.s > 0;
@@ -391,95 +396,164 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
       else out.push([o.x - b[3], o.y + b[1], o.z - b[5], o.x - b[0], o.y + b[4], o.z - b[2]]);
     }
   }
-  const near = [];   // 体の近くの箱だけ(毎フレーム作りなおす)
+  const near = [];
   function gatherNear(x, y, z, r) {
     near.length = 0;
-    for (const H of halls) for (const it of H.items) {
+    for (const it of PH.items) {
       const o = it.g.position;
-      if (Math.abs(o.x - x) > 20 + r || o.y - 1 > y + r || o.y + ROWH + 1 < y - r || Math.abs(o.z + H.s * 15 - z) > 18 + r) continue;
+      if (Math.abs(o.x - x) > 20 + r || o.y - 1 > y + r || o.y + ROWH + 1 < y - r || Math.abs(o.z + PH.s * 15 - z) > 18 + r) continue;
       worldBoxes(it, near);
     }
-    for (const L of lifts) near.push([L.x0, L.top - 0.5, L.z0, L.x1, L.top, L.z1]);
+    // つぶやきの壁
+    const wb = TH.wall; near.push(fixBox([-TW_W * TW_K / 2 - 1, wb.position.y - TH.height / 2, TH.s * FRONT, TW_W * TW_K / 2 + 1, wb.position.y + TH.height / 2, TH.s * (FRONT + 0.6)]));
+    for (const L of lifts) near.push(L.box());   // 自分のリフトだけ(ほかの人のリフトにはさわれない)
+  }
+  function fixBox(b) { return [Math.min(b[0], b[3]), Math.min(b[1], b[4]), Math.min(b[2], b[5]), Math.max(b[0], b[3]), Math.max(b[1], b[4]), Math.max(b[2], b[5])]; }
+  function rayBox(o, d, b, maxT) {
+    let t0 = 0, t1 = maxT;
+    for (let k = 0; k < 3; k++) {
+      if (Math.abs(d[k]) < 1e-9) { if (o[k] < b[k] || o[k] > b[k + 3]) return Infinity; continue; }
+      let a = (b[k] - o[k]) / d[k], c = (b[k + 3] - o[k]) / d[k];
+      if (a > c) [a, c] = [c, a];
+      if (a > t0) t0 = a; if (c < t1) t1 = c;
+      if (t0 > t1) return Infinity;
+    }
+    return t0;
   }
   const collider = {
     hits(x, y, z, h) {
       for (const b of near) if (x + HW > b[0] && x - HW < b[3] && z + HW > b[2] && z - HW < b[5] && y + h > b[1] && y < b[4]) return b;
       return null;
     },
-    // 光線が、箱の壁(サムネの穴をのぞく)に当たる距離(なければ Infinity)
     ray(o, d, maxT) {
       let best = Infinity;
       const boxes = [];
-      for (const H of halls) for (const it of H.items) worldBoxes(it, boxes);
-      for (const b of boxes) {
-        let t0 = 0, t1 = maxT, ok = true;
-        for (let k = 0; k < 3 && ok; k++) {
-          if (Math.abs(d[k]) < 1e-9) { if (o[k] < b[k] || o[k] > b[k + 3]) ok = false; continue; }
-          let a = (b[k] - o[k]) / d[k], c = (b[k + 3] - o[k]) / d[k];
-          if (a > c) [a, c] = [c, a];
-          if (a > t0) t0 = a; if (c < t1) t1 = c;
-          if (t0 > t1) ok = false;
-        }
-        if (ok && t0 < best) best = t0;
-      }
+      for (const it of PH.items) worldBoxes(it, boxes);
+      for (const b of boxes) { const t = rayBox(o, d, b, maxT); if (t < best) best = t; }
       return best;
     },
   };
 
-  // ==== 中に入っている箱 ====
-  let focus = null;   // { it }
+  // ======== クリック(十字・矢)で押せるところ: カードのアイコン・⋮、つぶやき、ページの投稿者 ========
+  const ray = new THREE.Raycaster();
+  function pickSpot(o, d, maxT) {
+    const targets = [];
+    for (const it of PH.items) { if (it.cv) targets.push(it.front); if (it.page) targets.push(it.page.mesh); }
+    for (const it of TH.items) targets.push(it.mesh);
+    ray.set(new THREE.Vector3(o[0], o[1], o[2]), new THREE.Vector3(d[0], d[1], d[2])); ray.near = 0; ray.far = maxT;
+    const hit = ray.intersectObjects(targets, false)[0];
+    if (!hit || !hit.uv) return null;
+    const ud = hit.object.userData, u = hit.uv.x, v = 1 - hit.uv.y;
+    if (ud.item) {   // カード: CSS px にもどす
+      const x = u * CARD_W, y = v * CARD_W, th = CARD_W * 9 / 16;
+      const it = ud.item;
+      if (Math.hypot(x - 18, y - (th + 12 + 18)) < 20) return { t: hit.distance, fn: () => ui.channel(it.d.uid) };
+      if (x > CARD_W - 44 && y > th && y < th + 48) return { t: hit.distance, fn: () => ui.postMenu(it.d) };
+      return null;
+    }
+    if (ud.page) {
+      const x = u * PAGE_W, y = v * PAGE_H;
+      for (const sp of ud.page.page ? ud.page.page.spots : []) if (x >= sp.x && x <= sp.x + sp.w && y >= sp.y && y <= sp.y + sp.h) return { t: hit.distance, fn: () => ui.channel(sp.uid) };
+      return null;
+    }
+    if (ud.tweet) {
+      const it = ud.tweet, x = u * TW_W, y = v * it.hcss, a = it.info.avatarAt, dt = it.info.dotsAt;
+      if (a && x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) return { t: hit.distance, fn: () => ui.channel(it.d.uid) };
+      if (dt && x >= dt.x && x <= dt.x + dt.w && y >= dt.y && y <= dt.y + dt.h) return { t: hit.distance, fn: () => ui.tweetMenu(it.d) };
+      return { t: hit.distance, fn: () => ui.tweet(it.d) };
+    }
+    return null;
+  }
+
+  // ======== 中に入っている箱 ========
+  let focus = null;
   function findFocus(p) {
-    for (const H of halls) for (const it of H.items) {
+    for (const it of PH.items) {
       const o = it.g.position;
-      const lx = H.s < 0 ? p.x - o.x : o.x - p.x, lz = H.s < 0 ? p.z - o.z : o.z - p.z;
+      const lx = p.x - o.x, lz = p.z - o.z;
       if (lx > -15 && lx < 15 && lz < 0.5 && lz > -30 && p.y > o.y - 0.6 && p.y < o.y + ROWH) return it;
     }
     return null;
   }
 
   return {
-    collider, halls, lifts, refresh, setData,
+    collider, halls, lifts, refresh, setData, remoteLift, pickSpot,
+    get categories() { return categories; },
     get voidY() { return Math.min(...halls.map((H) => H.bottom())) - 60; },
-    // 体を動かす前に呼ぶ: リフト・アニメーション・近くの当たり判定・前面の絵の出し入れ・中に入った箱
+    // 自分のリフトの状態(ほかの人に見せる)。休んでいるときは null
+    myLift() { for (const L of lifts) if (L.slide > 0.01 || L.top < Y0 - 0.01) return [L.s, Math.round(L.slide * 100) / 100, Math.round(L.top * 100) / 100]; return null; },
+    // チャンネル(その人の投稿・つぶやき)
+    channelData(uid) {
+      const u = PH.users[uid] || TH.users[uid] || {};
+      const name = u.name || (PH.data.find((p) => p.uid === uid) || {}).author || "チャンネル";
+      return { uid, name, handle: u.handle || "", avatar: u.avatar || "", subs: (PH.extra.subCounts || {})[uid] || 0, posts: PH.data.filter((p) => p.uid === uid).sort((a, b) => b.createdAt - a.createdAt), tweets: TH.data.filter((t) => t.uid === uid).sort((a, b) => b.createdAt - a.createdAt) };
+    },
+    tweetUser(uid) { return TH.users[uid] || PH.users[uid] || {}; },
+    // 投稿の箱の中へ(チャンネルのウィンドウから)
+    goInto(id, ctl) {
+      const it = PH.items.find((x) => x.id === id);
+      if (!it) { say("その投稿は、いまの並びには出ていません"); return; }
+      const o = it.g.position;
+      Object.assign(ctl.p, { x: o.x, y: o.y + 0.01, z: o.z - 10, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0.05, ground: true, glide: false });
+    },
     update(dt, ctl, active) {
       const p = ctl.p;
-      for (const H of halls) stepAnim(H, dt, ctl);
+      stepAnim(PH, dt, ctl);
       // リフト
       let riding = false;
       for (const L of lifts) {
-        const inFoot = p.x > L.x0 - 0.1 && p.x < L.x1 + 0.1 && p.z > L.z0 - 0.1 && p.z < L.z1 + 0.1;
+        const b = L.box();
+        const inFoot = p.x > b[0] - 0.1 && p.x < b[3] + 0.1 && p.z > b[2] - 0.1 && p.z < b[5] + 0.1;
         const on = inFoot && Math.abs(p.y - L.top) < 0.15 && p.vy <= 0.5 && !p.fly;
         if (on) {
-          riding = true;
+          riding = true; L.rider = true;
           const dir = (ctl.keys.Space ? 1 : 0) - (ctl.keys.Shift ? 1 : 0);
-          L.top = Math.max(L.H.bottom(), Math.min(Y0, L.top + dir * LIFT_SPEED * dt));
-          p.y = L.top; p.vy = 0; p.ground = true; L.rider = true;
-          if (dir < 0) p.sneak = false;   // 下りるときは、しゃがまない
+          if (dir < 0) {
+            if (L.slide < LIFT_SLIDE) { const n = Math.min(LIFT_SLIDE, L.slide + LIFT_V * dt); p.z += L.s * (n - L.slide); L.slide = n; }   // まず、リフト1枚ぶん前へ
+            else L.top = Math.max(L.H.bottom(), L.top - LIFT_V * dt);
+            p.sneak = false;
+          } else if (dir > 0) {
+            if (L.top < Y0) L.top = Math.min(Y0, L.top + LIFT_V * dt);
+            else if (L.slide > 0) { const n = Math.max(0, L.slide - LIFT_V * dt); p.z += L.s * (n - L.slide); L.slide = n; }
+          }
+          p.y = L.top; p.vy = 0; p.ground = true;
         } else if (L.rider) {
           L.rider = false;
-          if (L.top < Y0 - 0.05) L.top = Y0;   // 足を出したら、リフトは消えて、上に新しいのが用意される
+          if (L.slide > 0.01 || L.top < Y0 - 0.01) { L.slide = 0; L.top = Y0; }   // 足を出したら、リフトは消えて、もとの場所に新しいのが用意される
         }
         L.place();
       }
       ctl.riding = riding;
+      // ほかの人のリフト(なめらかに)
+      for (const g of ghosts.values()) {
+        for (let k = 1; k < 3; k++) g.cur[k] += (g.to[k] - g.cur[k]) * (1 - Math.exp(-dt * 14));
+        g.cur[0] = g.to[0];
+        const s = g.cur[0], zn = s * (2.5 + g.cur[1]), zf = s * (5.5 + g.cur[1]);
+        g.mesh.position.set(0, g.cur[2] - 0.5, (zn + zf) / 2);
+      }
       gatherNear(p.x, p.y, p.z, 6);
-      // 前面の絵: 近いものから、少しずつ作る(一度にたくさん作ると、固まってしまう)
+      // 前面の絵: 近いものから、少しずつ
       const cand = [];
       let alive = 0;
-      for (const H of halls) for (const it of H.items) {
+      for (const it of PH.items) {
         const o = it.g.position; it.dist = Math.hypot(o.x - p.x, o.y + 15 - p.y, o.z - p.z);
-        if (it.cv) { if (it.dist > FAR) freeTex(it); else alive++; }
-        else if (it.dist < NEAR) cand.push(it);
+        if (it.cv) { if (it.dist > FAR) freeTex(it); else alive++; } else if (it.dist < NEAR) cand.push(it);
+      }
+      for (const it of TH.items) {
+        it.dist = Math.hypot(p.x, it.top - it.hcss * TW_K / 2 - p.y, it.mesh.position.z - p.z);
+        if (it.cv) { if (it.dist > FAR) freeTweetTex(it); else alive++; } else if (it.dist < NEAR) cand.push(it);
       }
       cand.sort((a, b) => a.dist - b.dist);
       for (let i = 0; i < cand.length && i < TEX_PER_FRAME; i++) {
-        if (alive >= TEX_MAX) {   // いっぱいなら、いちばん遠いものを捨てる
+        if (alive >= TEX_MAX) {
           let far = null;
-          for (const H of halls) for (const it of H.items) if (it.cv && (!far || it.dist > far.dist)) far = it;
+          for (const it of PH.items.concat(TH.items)) if (it.cv && (!far || it.dist > far.dist)) far = it;
           if (!far || far.dist <= cand[i].dist) break;
-          freeTex(far); alive--;
+          if (far.mesh) freeTweetTex(far); else freeTex(far);
+          alive--;
         }
-        ensureTex(cand[i]); alive++;
+        if (cand[i].mesh) ensureTweetTex(cand[i]); else ensureTex(cand[i]);
+        alive++;
       }
       const f = findFocus(p);
       if ((f || null) !== (focus ? focus.it : null)) {
@@ -489,5 +563,6 @@ export function createHalls(THREE, scene, { api, getToken, buttons, getMe, say, 
       }
       if (active) { refreshT -= dt; if (refreshT <= 0) { refreshT = 300; refresh(); } }
     },
+    refreshSoon() { refreshT = 0.5; },
   };
 }

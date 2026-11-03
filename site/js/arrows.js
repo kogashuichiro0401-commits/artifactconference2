@@ -48,7 +48,7 @@ export function createArrows(T, scene, world, hitTest, onHit, btnTest, onBtn) {
           // うかぶボタン(自分の矢だけ)
           if (a.mine && btnTest) {
             const bh = btnTest(a.p, [a.p[0] + a.v[0], a.p[1] + a.v[1], a.p[2] + a.v[2]]);
-            if (bh && (!hit || bh.f * len < hit.t)) { const t = bh.f * len; a.p = [a.p[0] + d[0] * t, a.p[1] + d[1] * t, a.p[2] + d[2] * t]; a.q = a.p.slice(); a.stuck = true; a.life = STUCK_LIFE; if (onBtn) onBtn(bh.b); continue; }
+            if (bh && (!hit || bh.f * len < hit.t)) { const t = bh.f * len; a.p = [a.p[0] + d[0] * t, a.p[1] + d[1] * t, a.p[2] + d[2] * t]; a.q = a.p.slice(); a.stuck = true; a.life = STUCK_LIFE; if (onBtn) onBtn(bh); continue; }
           }
           if (a.mine && hitTest) {   // 人に当たったか(ブロックより手前のとき)
             const ph = hitTest(a.p, [a.p[0] + a.v[0], a.p[1] + a.v[1], a.p[2] + a.v[2]]);

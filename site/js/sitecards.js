@@ -91,6 +91,7 @@ export const ICO = {
   trt: "M17 3l3 3-3 3M4 11V9a3 3 0 0 1 3-3h13M7 21l-3-3 3-3M20 13v2a3 3 0 0 1-3 3H4",
   theart: "M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z", tview: "M5 20v-8M12 20V5M19 20v-11",
   heart: "M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z", edit: "M4 20h4L19 9l-4-4L4 16zM14 6l4 4",
+  plus: "M12 4v16M4 12h16", pin: "M9 3h6l-1 6 3 3v2H7v-2l3-3zM12 14v7",
 };
 const pathCache = new Map();
 export function drawIcon(c, name, x, y, size, color) {
@@ -226,7 +227,7 @@ export function drawPostCard(c, p, info, W, S) {
 export function drawWatchPage(c, p, info, W, S) {
   const cw = c.canvas.width, chH = c.canvas.height;
   c.fillStyle = C.bg; c.fillRect(0, 0, cw, chH);
-  const btns = [];
+  const btns = [], spots = [];
   const gap = 28, mainW = (W - gap) * 0.7, cmX = mainW + gap, cmW = W - cmX;
   // 一覧にもどる(.btn.back: 高さ44、角22、アイコン18、太字、下に14)
   c.font = font(15 * S, 700);
@@ -265,6 +266,7 @@ export function drawWatchPage(c, p, info, W, S) {
   c.font = font(13 * S); c.fillStyle = C.muted; c.fillText("チャンネル登録者数 " + (info.subs || 0) + "人", 48 * S, (y + 40) * S);
   c.font = font(15 * S, 700);
   const nameW = Math.max(c.measureText(p.author || "").width / S, (c.font = font(13 * S), c.measureText("チャンネル登録者数 " + (info.subs || 0) + "人").width / S));
+  spots.push({ id: "channel", uid: p.uid, x: 0, y, w: 48 + nameW, h: 44 });
   if (!info.mine) btns.push({ id: "sub", x: 48 + nameW + 16, y, w: 40 + (c.font = font(15 * S, 700), c.measureText(info.subbed ? "登録済み" : "チャンネル登録").width / S), h: 44, label: info.subbed ? "登録済み" : "チャンネル登録", style: info.subbed ? "btn" : "subscribe" });
   // 右の動作ボタン(右から並べる)
   const acts = [];
@@ -301,6 +303,7 @@ export function drawWatchPage(c, p, info, W, S) {
   else for (const m of cms) {
     if ((cy + 60) * S > chH) break;
     drawAvatar(c, cmX * S, (cy + 6) * S, 40 * S, m.name, m.uid, m.avatar);
+    spots.push({ id: "channel", uid: m.uid, x: cmX, y: cy + 6, w: 40, h: 40 });
     let hx = cmX + 52;
     c.font = font(13 * S, 700); c.fillStyle = C.fg; c.fillText(m.name || "", hx * S, (cy + 20) * S); hx += c.measureText(m.name || "").width / S + 8;
     if (m.owner) { c.font = font(11 * S, 700); const ow = c.measureText("投稿者").width / S + 16; c.fillStyle = C.fg; rr(c, hx * S, (cy + 8) * S, ow * S, 18 * S, 10 * S); c.fill(); c.fillStyle = C.bg; c.fillText("投稿者", (hx + 8) * S, (cy + 21) * S); hx += ow + 8; }
@@ -314,7 +317,7 @@ export function drawWatchPage(c, p, info, W, S) {
     drawIcon(c, "heart", (cmX + 120) * S, (ay + 9) * S, 16 * S, C.muted); c.fillText(String(m.likes || 0), (cmX + 140) * S, (ay + 22) * S);
     cy = ay + 36 + 6;
   }
-  return { btns, height: Math.max(y, 0) };
+  return { btns, spots, height: Math.max(y, 0) };
 }
 
 // ==== ツイート(.tw)。detail: 右の表示(日時を細かく) ====
@@ -366,6 +369,8 @@ export function drawButtonFace(cv, b, S) {
   let bg = C.surface, fg = C.fg, r = h / 2, fw = 700, px = 15;
   if (b.style === "go") { bg = "#ffffff"; fg = "#0f0f0f"; px = 17; }
   if (b.style === "subscribe") { bg = C.fg; fg = C.bg; }
+  if (b.style === "primary") { bg = C.accent; fg = C.accentFg; }
+  if (b.style === "pill") { fw = 500; }
   if (b.style === "dots") { r = h / 2; }
   if (b.pressed) { bg = C.accentSoft; fg = C.accent; }
   if (b.style === "sort") { bg = b.pressed ? C.accentSoft : C.surface; fg = b.pressed ? C.accent : C.fg; r = 0; }
@@ -383,4 +388,95 @@ export function drawButtonFace(cv, b, S) {
   let x = (w - total) / 2;
   if (b.icon) { drawIcon(c, b.icon, x, (h - isz) / 2, isz, fg); x += isz + gapW; }
   if (b.label) { c.fillStyle = fg; c.textBaseline = "middle"; c.fillText(b.label, x, h / 2 + S); c.textBaseline = "alphabetic"; }
+}
+
+// ==== 掲示板の左(タイムライン)の1件(.tw)。高さ(CSS px)を返す。c が null なら、測るだけ ====
+// info: { name, handle, avatar, image, label, sel }
+const RICH = /(https?:\/\/\S+|#[^\s#]+)/g;
+function richRuns(text) {   // [文字, 色つきか]
+  const out = []; let last = 0, m;
+  RICH.lastIndex = 0;
+  while ((m = RICH.exec(text))) { if (m.index > last) out.push([text.slice(last, m.index), false]); out.push([m[0], true]); last = m.index + m[0].length; }
+  if (last < text.length) out.push([text.slice(last), false]);
+  return out;
+}
+function richLines(c, text, maxW) {   // 行ごとに [[文字, 色], ...]
+  const lines = [];
+  for (const para of String(text || "").split("\n")) {
+    let line = [], w = 0;
+    for (const [seg, hl] of richRuns(para)) {
+      for (const ch of Array.from(seg)) {
+        const cw = c.measureText(ch).width;
+        if (w + cw > maxW && line.length) { lines.push(line); line = []; w = 0; }
+        const last = line[line.length - 1];
+        if (last && last[1] === hl) last[0] += ch; else line.push([ch, hl]);
+        w += cw;
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+let measureCv = null;
+export function drawTweetItem(c, t, info, x0, y0, W, S) {
+  const draw = !!c;
+  if (!c) { measureCv = measureCv || document.createElement("canvas"); c = measureCv.getContext("2d"); }
+  const pad = 8, padY = 12, x = x0 + pad, tx = x + 36 + 12, tw = W - pad * 2 - 36 - 12;
+  let y = y0 + padY;
+  // 本文の行(15px、行の高さ1.55)
+  c.font = font(15 * S);
+  const text = String(t.text || "");
+  const all = text ? richLines(c, text, tw * S) : [];
+  const clamp = text.length > 280 || text.split("\n").length > 8;
+  const lh = 15 * 1.55, maxLines = clamp ? Math.floor(9.3 * 15 / lh) : all.length;
+  const shown = all.slice(0, maxLines);
+  let h = padY + (info.label ? 12 * 1.6 + 2 : 0) + 22 + (text ? 4 + shown.length * lh : 0) + (clamp ? 4 + 14 * 1.6 + 4 : 0) + (info.image ? 8 + tw * 9 / 16 : 0) + 8 + 26 + padY;
+  if (!draw) return h;
+  // 背景(固定ツイート・選んでいるもの)
+  if (info.sel) { c.fillStyle = C.accentSoft; rr(c, x0 * S, y0 * S, W * S, h * S, 10 * S); c.fill(); }
+  else { c.strokeStyle = C.line; c.lineWidth = S; c.beginPath(); c.moveTo(x0 * S, (y0 + h) * S); c.lineTo((x0 + W) * S, (y0 + h) * S); c.stroke(); }
+  drawAvatar(c, x * S, y * S, 36 * S, info.name, t.uid, info.avatar);
+  if (info.label) {
+    drawIcon(c, "pin", tx * S, (y + 2) * S, 14 * S, C.muted);
+    c.font = font(12 * S); c.fillStyle = C.muted; c.fillText(info.label, (tx + 20) * S, (y + 13) * S);
+    y += 12 * 1.6 + 2;
+  }
+  let hx = tx;
+  c.font = font(14 * S, 700); c.fillStyle = C.fg; c.fillText(info.name || "チャンネル", hx * S, (y + 16) * S); hx += c.measureText(info.name || "チャンネル").width / S + 6;
+  c.font = font(13 * S); c.fillStyle = C.muted;
+  for (const s of [info.handle ? "@" + info.handle : "", "・", ago(t.createdAt), t.editedAt ? "（" + agoNi(t.editedAt) + "編集済み）" : ""]) { if (!s) continue; c.fillText(s, hx * S, (y + 16) * S); hx += c.measureText(s).width / S + 6; }
+  info.dotsAt = { x: hx + 4, y: y - 6, w: 36, h: 36 };
+  drawIcon(c, "dots", (hx + 10) * S, (y + 2) * S, 18 * S, C.fg);
+  y += 22;
+  if (text) {
+    y += 4;
+    c.font = font(15 * S);
+    shown.forEach((ln, i) => {
+      let lx = tx;
+      for (const [seg, hl] of ln) { c.fillStyle = hl ? "#1d6fd8" : C.fg; c.font = font(15 * S, hl ? 700 : 400); c.fillText(seg, lx * S, (y + lh * (i + 0.75)) * S); lx += c.measureText(seg).width / S; }
+    });
+    if (clamp) {   // 下をぼかす
+      const g = c.createLinearGradient(0, (y + shown.length * lh * 0.7) * S, 0, (y + shown.length * lh) * S);
+      g.addColorStop(0, info.sel ? "rgba(230,237,248,0)" : "rgba(255,255,255,0)"); g.addColorStop(1, info.sel ? C.accentSoft : C.bg);
+      c.fillStyle = g; c.fillRect(tx * S, (y + shown.length * lh * 0.7) * S, tw * S, shown.length * lh * 0.3 * S);
+    }
+    y += shown.length * lh;
+    if (clamp) { y += 4; c.font = font(14 * S); c.fillStyle = C.accent; c.fillText("続きを読む（" + text.length + "文字）", tx * S, (y + 16) * S); y += 14 * 1.6 + 4; }
+  }
+  if (info.image) {
+    const ih = tw * 9 / 16; y += 8;
+    c.save(); rr(c, tx * S, y * S, tw * S, ih * S, 14 * S); c.clip(); drawCover(c, info.image, tx * S, y * S, tw * S, ih * S); c.restore();
+    c.strokeStyle = C.line; c.lineWidth = S; rr(c, tx * S, y * S, tw * S, ih * S, 14 * S); c.stroke();
+    y += ih;
+  }
+  y += 8;
+  let ax = tx - 6;
+  for (const [ic, n, on] of [["tbub", t.replies, false], ["trt", t.rts, t.myRt], ["theart", t.likes, t.myLike], ["tview", t.views, false]]) {
+    const col = on ? (ic === "trt" ? "#0b8a4a" : "#d6245f") : C.muted;
+    drawIcon(c, ic, (ax + 6) * S, (y + 4) * S, 18 * S, col);
+    c.font = font(13 * S, on ? 700 : 400); c.fillStyle = col; c.fillText(String(n || 0), (ax + 30) * S, (y + 18) * S);
+    ax += 6 + 18 + 6 + c.measureText(String(n || 0)).width / S + 6 + 22;
+  }
+  info.avatarAt = { x, y: y0 + padY, w: 36, h: 36 };
+  return h;
 }

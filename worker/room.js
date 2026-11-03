@@ -16,6 +16,13 @@ function cleanName(s) {
 }
 
 // 届いた位置・向きを検査して、安全な値にそろえる(世界の外や、数でない値は直す)
+// リフトの状態 [向き(-1|1), 前に出た量(0〜3), 高さ]。休んでいるときは null
+function liftOf(v) {
+  if (!Array.isArray(v) || v.length !== 3 || (v[0] !== -1 && v[0] !== 1)) return null;
+  const a = Number(v[1]), b = Number(v[2]);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || a > 3 || b < -1e5 || b > 10) return null;
+  return [v[0], Math.round(a * 100) / 100, Math.round(b * 100) / 100];
+}
 function pose(m, base) {
   return {
     x: r2(num(m.x, -1e5, 1e5, base?.x ?? SPAWN.x)),
@@ -26,11 +33,12 @@ function pose(m, base) {
     fly: m.fly === true,
     sneak: m.sneak === true,
     glide: m.glide === true,
+    lf: liftOf(m.lf),
   };
 }
 
-const pub = (a) => ({ id: a.id, name: a.name, x: a.x, y: a.y, z: a.z, yaw: a.yaw, pitch: a.pitch, fly: a.fly, sneak: a.sneak, glide: a.glide });
-const posMsg = (a) => ({ t: "pos", id: a.id, x: a.x, y: a.y, z: a.z, yaw: a.yaw, pitch: a.pitch, fly: a.fly, sneak: a.sneak, glide: a.glide });
+const pub = (a) => ({ id: a.id, name: a.name, x: a.x, y: a.y, z: a.z, yaw: a.yaw, pitch: a.pitch, fly: a.fly, sneak: a.sneak, glide: a.glide, lf: a.lf || null });
+const posMsg = (a) => ({ t: "pos", id: a.id, x: a.x, y: a.y, z: a.z, yaw: a.yaw, pitch: a.pitch, fly: a.fly, sneak: a.sneak, glide: a.glide, lf: a.lf || null });
 
 const SWEEP_MS = 15000;     // 切れた人がいないか、見はる間隔
 const IDLE_MS = 60000;      // これだけ何も届かない人は、退出あつかい(画面からは20秒ごとに ping が届く)

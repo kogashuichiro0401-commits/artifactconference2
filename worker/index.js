@@ -3,8 +3,8 @@ import { VERSION } from "../site/js/version.js";
 import { callSite } from "./site.js";
 export { Room } from "./room.js";
 
-// ゲームから使ってよい、artifact学会の操作。ここにないものは通さない(書き込み系は通さない)
-const ALLOW = new Set(["login", "logout", "me", "list", "listTweets", "getGoogleConfig", "loginGoogle", "getThumbs", "getTweetImages", "listComments", "downloadFile"]);
+// ゲームから使ってよい、artifact学会の操作。ここにないものは通さない(書き込みは、投稿とツイートだけ)
+const ALLOW = new Set(["login", "logout", "me", "list", "listTweets", "getGoogleConfig", "loginGoogle", "getThumbs", "getTweetImages", "listComments", "downloadFile", "getTweet", "createPost", "postTweet"]);
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -12,7 +12,7 @@ const json = (o, status = 200) =>
 async function api(request, env) {
   if (request.method !== "POST") return json({ ok: false, error: "method" }, 405);
   const text = await request.text();
-  if (text.length > 6000) return json({ ok: false, error: "too_large" }, 413);
+  if (text.length > 45000) return json({ ok: false, error: "too_large" }, 413);
   let p;
   try { p = JSON.parse(text); } catch (e) { return json({ ok: false, error: "bad_request" }, 400); }
   if (!p || typeof p.action !== "string" || !ALLOW.has(p.action)) return json({ ok: false, error: "not_allowed" }, 403);
@@ -20,7 +20,11 @@ async function api(request, env) {
   for (const k of ["username", "password", "token"]) if (typeof p[k] === "string") clean[k] = p[k].slice(0, 300);
   if (p.action === "loginGoogle" && typeof p.credential === "string") clean.credential = p.credential.slice(0, 4100);   // Googleの確認用の証明書(IDトークン)
   if (Array.isArray(p.ids)) clean.ids = p.ids.filter((x) => typeof x === "string" && x.length < 41).slice(0, 12);
-  for (const k of ["id", "postId"]) if (typeof p[k] === "string") clean[k] = p[k].slice(0, 60);
+  for (const k of ["id", "postId", "parentId"]) if (typeof p[k] === "string") clean[k] = p[k].slice(0, 60);
+  // 投稿・ツイート(ゲームの中のウィンドウから)
+  for (const [k, n] of [["url", 2000], ["title", 200], ["desc", 4000], ["cat", 100], ["text", 20000]]) if (typeof p[k] === "string") clean[k] = p[k].slice(0, n);
+  if (p.kind === "artifact" || p.kind === "website") clean.kind = p.kind;
+  if (p.visibility === "private" || p.visibility === "public") clean.visibility = p.visibility;
   if (Number.isInteger(p.index) && p.index >= 0 && p.index < 100) clean.index = p.index;
   const j = await callSite(env, clean);
   if (!j) return json({ ok: false, error: "site_unavailable" }, 503);
