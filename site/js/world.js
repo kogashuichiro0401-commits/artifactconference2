@@ -1,8 +1,9 @@
 // ブロックとプレートの世界(ブラウザ側)。保存・判定・光線・メッシュ作り。
-import { N, YMIN, YN, BLOCK, mod, defaultCell } from "./shared.js";
+import { N, YMIN, YN, BLOCK, ROPE, mod, defaultCell } from "./shared.js";
 import { PLATES, T } from "./plates.js";
 
 const HW = 0.3;
+export const RHW = 0.07;   // 縄の太さの半分
 export const CH = 16;   // メッシュの区画の大きさ(横)
 // ---- マイクラ式の明るさ ----
 // 1. 面の向き: 上がいちばん明るく、横は少し暗く、下がいちばん暗い(ほかのブロックは関係ない)
@@ -107,6 +108,19 @@ export class World {
     return null;
   }
 
+  // 体(横の半幅 HW、高さ h)が、縄にふれているか(のぼれる)
+  touchRope(x, y, z, h) {
+    const m = 0.03;
+    const x0 = Math.floor(x - HW - m + 0.5), x1 = Math.floor(x + HW + m + 0.5);
+    const y0 = Math.floor(y + 0.5), y1 = Math.floor(y + h + 0.5);
+    const z0 = Math.floor(z - HW - m + 0.5), z1 = Math.floor(z + HW + m + 0.5);
+    for (let ix = x0; ix <= x1; ix++) for (let iy = y0; iy <= y1; iy++) for (let iz = z0; iz <= z1; iz++) {
+      if (!(this.get(ix, iy, iz) & ROPE)) continue;
+      if (x + HW + m > ix - RHW && x - HW - m < ix + RHW && z + HW + m > iz - RHW && z - HW - m < iz + RHW && y + h > iy - 0.5 && y < iy + 0.5) return true;
+    }
+    return false;
+  }
+
   // 目から出る光線。ブロックやプレートに当たった最初のものを返す。(ix,iy,iz は、ループしない通しの番号)
   raycast(o, d, reach, blocksOnly) {
     let ix = Math.floor(o[0] + 0.5), iy = Math.floor(o[1] + 0.5), iz = Math.floor(o[2] + 0.5);
@@ -122,6 +136,10 @@ export class World {
           if (t > 0) return { kind: "block", cell: idxs.slice(), face, t, point: [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t] };
         } else if (!blocksOnly) {
           let best = null;
+          if (v & ROPE) {
+            const r = rayRope(o, d, idxs);
+            if (r && r.t <= reach) best = { kind: "rope", cell: idxs.slice(), face: r.n, t: r.t, point: [o[0] + d[0] * r.t, o[1] + d[1] * r.t, o[2] + d[2] * r.t] };
+          }
           for (let i = 0; i < 12; i++) {
             if (!(v & (1 << i))) continue;
             const r = rayPlate(o, d, idxs, PLATES[i]);
@@ -136,6 +154,23 @@ export class World {
     }
     return null;
   }
+}
+
+// 縄(セルの中央の細い柱)と光線の交点
+function rayRope(o, d, cell) {
+  let tn = 0, tf = Infinity, ax = -1, sg = 1;
+  for (let k = 0; k < 3; k++) {
+    const h = k === 1 ? 0.5 : RHW, lo = cell[k] - h - o[k], hi = cell[k] + h - o[k];
+    if (Math.abs(d[k]) < 1e-9) { if (lo > 0 || hi < 0) return null; continue; }
+    let a = lo / d[k], b = hi / d[k], s = -1;
+    if (a > b) { const q = a; a = b; b = q; s = 1; }
+    if (a > tn) { tn = a; ax = k; sg = s; }
+    if (b < tf) tf = b;
+    if (tn > tf) return null;
+  }
+  if (ax < 0) return null;
+  const n = [0, 0, 0]; n[ax] = d[ax] > 0 ? -1 : 1;
+  return { t: tn, n };
 }
 
 // 板(向きのついた薄い箱)と光線の交点
@@ -214,6 +249,22 @@ export function buildChunk(world, cx, cz) {
         else idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
       }
     } else {
+      if (v & ROPE) {   // 縄: 細い四角い柱を、4つの帯(色が交互)に分けて作る
+        const lv = LIGHT_F[world.lightAt(x, y, z)];
+        for (const f of FACES) {
+          if (f.n[1] !== 0) continue;
+          const s = shade(f.n) * lv;
+          for (let b = 0; b < 4; b++) {
+            const base = pos.length / 3, tone = b % 2 ? [0.62, 0.46, 0.24] : [0.82, 0.64, 0.36];
+            const y0 = y - 0.5 + b * 0.25, y1 = y0 + 0.25;
+            for (const q of f.v) {
+              pos.push(x + q[0] * 2 * RHW, q[1] > 0 ? y1 : y0, z + q[2] * 2 * RHW);
+              col.push(s * tone[0], s * tone[1], s * tone[2]);
+            }
+            idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+          }
+        }
+      }
       for (let i = 0; i < 12; i++) {
         if (!(v & (1 << i))) continue;
         // プレートは厚みのない1まいの面。両面とも、明るいほうの向き + そのセルの光

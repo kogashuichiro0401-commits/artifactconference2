@@ -4,6 +4,7 @@ export const N = 49;          // 横(x, z)のブロック数。はしは反対�
 export const YMIN = 0;        // いちばん下のブロックの高さ(床がここ。世界の底)
 export const YN = 49;         // 縦のブロック数(YMIN 〜 YMIN+YN-1)。上下もつながる
 export const BLOCK = 4096;    // セルの値: ブロックがある
+export const ROPE = 8192;     // セルの値: 縄ブロック(セルの中央に、下から上まで細い縄が通る。通りぬけられて、触れてSpaceでのぼれる)
 // セルの値: BLOCK ならブロック。そうでなければ下位12ビットが「プレート」の有無(0〜5=面、6〜11=斜め)
 export const NAME_MAX = 16;
 export const REACH = 12;      // 手の届く距離

@@ -96,7 +96,7 @@ export class Controls {
         else {
           this.lastSp = now;
           if (p.glide) { p.glide = false; p.boost = 0; this.say("滑空を終えました(自由落下)"); }
-          else if (this.cfg.ely && !p.fly && !p.ground && p.vy < -1) { p.glide = true; this.say("エリトラが開きました(ロケット花火を持って右クリック)"); }
+          else if (this.cfg.ely && !p.fly && !p.ground && p.vy < -1 && !this.onRope) { p.glide = true; this.say("エリトラが開きました(ロケット花火を持って右クリック)"); }
         }
         this.kick = 1;
       }
@@ -158,6 +158,9 @@ export class Controls {
     if (this.rocketT < 1) this.rocketT = Math.min(1, this.rocketT + dt / 0.4);
     if (this.swingP > 0) { this.swingP += dt / 0.28; if (this.swingP >= 1) this.swingP = 0; }
     if (this.kbT > 0) this.kbT -= dt;
+    // 縄にふれている間(飛行中は別): Space長押しでのぼる。のぼらないときは、ゆっくりずり落ちる
+    this.onRope = !p.fly && this.world.touchRope(p.x, p.y, p.z, this.curH());
+    if (this.onRope) { p.glide = false; p.boost = 0; }
     if (p.glide && (p.fly || p.ground || !this.cfg.ely)) { p.glide = false; p.boost = 0; }
     const gv = p.glide ? [p.vx, p.vy, p.vz] : null;
     let f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), s = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
@@ -178,7 +181,8 @@ export class Controls {
       p.vy += (ty - p.vy) * (1 - Math.exp(-10 * dt));
     } else {
       p.vy = Math.max(-78, p.vy - 32 * dt);
-      if (keys.Space && p.ground) { p.vy = 9; p.ground = false; }
+      if (this.onRope) { if (keys.Space) { p.vy = 4.5; p.ground = false; } else p.vy = Math.max(p.vy, -3); }
+      else if (keys.Space && p.ground) { p.vy = 9; p.ground = false; }
     }
     if (gv) this.glideTick(dt, gv);
     const h = this.curH(), nx = p.x + p.vx * dt;

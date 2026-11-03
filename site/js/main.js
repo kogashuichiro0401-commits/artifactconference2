@@ -731,11 +731,11 @@ function act(button) {
   }
   if (button === 0 && tryBreakMark()) return null;
   if (button === 0 && build.target) {   // 左クリック = 壊す
-    const t = build.target, op = t.kind === "block" ? "b-" : "p-";
+    const t = build.target, op = t.kind === "block" ? "b-" : t.kind === "rope" ? "r-" : "p-";
     return sendEdit(op, t.cell, t.plate) ? { kind: t.kind, op, cell: t.cell.slice(), i: t.plate } : null;
   }
   if (button === 2 && build.place) {   // 右クリック = 置く
-    const pl = build.place, op = pl.kind === "block" ? "b+" : "p+", cell = [pl.x, pl.y, pl.z];
+    const pl = build.place, op = pl.kind === "block" ? "b+" : pl.kind === "rope" ? "r+" : "p+", cell = [pl.x, pl.y, pl.z];
     return sendEdit(op, cell, pl.i) ? { kind: pl.kind, op, cell, i: pl.i } : null;
   }
   return null;

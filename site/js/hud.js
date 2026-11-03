@@ -33,6 +33,7 @@ const BOOK = `
     <li><b>マウス</b>…見る方向。<b>ホイール</b>…ズーム。<b>F5</b>…視点の切り替え(一人称/後ろ/前)</li>
     <li><b>十字の先</b>のブロック/プレートは、黒い細い枠で囲まれる</li>
     <li>(管理者だけ)<b>F4</b>…建築破壊モード。<b>左クリック</b>=壊す、<b>右クリック</b>=置く(白いブロック/プレートを持っているとき)。プレートは、目線に垂直な向きのものが薄く表示されて置かれる。<b>C</b>…プレートの置き方(自動/面だけ/斜めだけ)</li>
+    <li>(管理者だけ)<b>縄ブロック</b>(6番)…置くと、セルの中央に縄が通る。体が触れている間、<b>Space長押し</b>で上にのぼれる(のぼらないとゆっくりずり落ちる)。通りぬけられる。左クリックでこわす</li>
     <li>(管理者だけ)<b>/fill block</b> や <b>/fill air</b>(座標なし)で、緑の始点ブロックがホットバーの9番に出る。右クリックで置くと赤の終点ブロックになり、それも置くと、はさんだ範囲が埋まる(置いたブロックは左クリックでこわして、置きなおせる)。<b>/clone</b>(座標なし)は、緑→赤でコピー元、緑→赤で貼りつけ先。<b>/clone x1 y1 z1 x2 y2 z2 x3 y3 z3 x4 y4 z4</b> と座標で書いてもよい(体積が同じであること)。<b>/fill cancel</b> で取り消し</li>
     <li><b>F3</b>…座標などの情報。世界は49×49×49(座標は0〜48)で、はしは反対側につながっている(上下も)</li>
     <li><b>1〜9</b>…手に持つものを変える。<b>E</b>…持ち物。<b>Esc</b>…メニュー</li>
@@ -44,7 +45,7 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
   inv[0] = "bow";
   inv[1] = "book";
   inv[4] = "rocket";
-  const setItems = (admin) => { inv[2] = admin ? "block" : null; inv[3] = admin ? "plate" : null; };
+  const setItems = (admin) => { inv[2] = admin ? "block" : null; inv[3] = admin ? "plate" : null; inv[5] = admin ? "rope" : null; };
   let loading = false, sel = 0, hp = 20, nameTimer = 0, entered = false, updateVer = null, user = null, sayTimer = 0;
 
   // ----- ハート(体力は0〜20。1つのハートが2) -----

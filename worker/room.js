@@ -1,7 +1,7 @@
 // ゲームの「部屋」。全員の接続を預かり、位置を配る。
 // 各プレイヤーの情報は、接続(WebSocket)にくっつけて持つ(休止から起きても消えない)。
 import { VERSION } from "../site/js/version.js";
-import { N, YMIN, YN, BLOCK, NAME_MAX, REACH, mod, defaultCell, inRangeY, keyOf, wrapDelta } from "../site/js/shared.js";
+import { N, YMIN, YN, BLOCK, ROPE, NAME_MAX, REACH, mod, defaultCell, inRangeY, keyOf, wrapDelta } from "../site/js/shared.js";
 import { verifyToken } from "./site.js";
 
 const MAX_PLAYERS = 8;
@@ -91,8 +91,10 @@ export class Room {
     const cur = this.cellValue(x, y, z);
     let v = cur;
     if (m.op === "b+") { if (cur !== 0) return; v = BLOCK; }
+    else if (m.op === "r+") { if (cur !== 0) return; v = ROPE; }
+    else if (m.op === "r-") { if (!(cur & ROPE)) return; v = 0; }
     else if (m.op === "b-") { if (!(cur & BLOCK)) return; v = 0; }
-    else if (m.op === "p+") { const i = m.i | 0; if (i < 0 || i > 11 || (cur & BLOCK) || (cur & (1 << i))) return;
+    else if (m.op === "p+") { const i = m.i | 0; if (i < 0 || i > 11 || (cur & BLOCK) || (cur & ROPE) || (cur & (1 << i))) return;
       if (i >= 6 && (cur & 0xfc0)) return this.send(ws, { t: "deny", why: "斜めのプレートは、1つの座標に1つまでです" });
       v = cur | (1 << i); }
     else if (m.op === "p-") { const i = m.i | 0; if (i < 0 || i > 11 || (cur & BLOCK) || !(cur & (1 << i))) return; v = cur & ~(1 << i); }

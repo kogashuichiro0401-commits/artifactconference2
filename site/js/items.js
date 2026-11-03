@@ -46,11 +46,18 @@ const markIcon = (top, left, right, line) => svg(`
 const MARK_S_ICON = markIcon("#7bea7f", "#35b43d", "#27922f", "#145c1a");
 const MARK_E_ICON = markIcon("#ff8f86", "#e0453a", "#b8322a", "#6b1510");
 
+// 縄ブロック: セルの中央を下から上へ通る、結び目のある縄
+const ROPE_ICON = svg(`
+  <path d="M24 4 C20 10 28 14 24 20 C20 26 28 30 24 36 C21 40 26 43 24 46" stroke="#6e4a1e" stroke-width="7"/>
+  <path d="M24 4 C20 10 28 14 24 20 C20 26 28 30 24 36 C21 40 26 43 24 46" stroke="#c99a52" stroke-width="4.6"/>
+  <path d="M19 10 L29 13 M19 22 L29 25 M19 34 L29 37" stroke="#7a5424" stroke-width="1.4"/>`);
+
 export const ITEMS = {
   bow: { name: "弓(右クリックを長押しでためて、はなす)", icon: BOW_ICON },
   book: { name: "使い方の本", icon: BOOK_ICON },
   block: { name: "白いブロック", icon: BLOCK_ICON },
   plate: { name: "白いプレート", icon: PLATE_ICON },
+  rope: { name: "縄ブロック(触れてSpace長押しで、上にのぼれる)", icon: ROPE_ICON },
   mark_s: { name: "始点ブロック(緑): 右クリックで置く", icon: MARK_S_ICON },
   mark_e: { name: "終点ブロック(赤): 右クリックで置く", icon: MARK_E_ICON },
   rocket: { name: "ロケット花火(滑空中に右クリック / 長タップ)", icon: ROCKET_ICON },

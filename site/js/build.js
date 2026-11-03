@@ -1,5 +1,6 @@
 // 十字の先のブロック/プレートを黒い細い枠で囲む(プレビュー)。建築破壊モードでは、置いた場合の薄い表示も出す。
-import { REACH, BLOCK, inRangeY } from "./shared.js";
+import { REACH, BLOCK, ROPE, inRangeY } from "./shared.js";
+import { RHW } from "./world.js";
 import { PLATES, T } from "./plates.js";
 
 export class BuildTool {
@@ -39,12 +40,13 @@ export class BuildTool {
     const tg = this.target;
     if (tg) {
       if (tg.kind === "block") this.setBoxMatrix(this.outline, tg.cell, [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0.5, 0.5, 0.5], 0.006);
+      else if (tg.kind === "rope") this.setBoxMatrix(this.outline, tg.cell, [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [RHW, 0.5, RHW], 0.006);
       else { const p = PLATES[tg.plate]; this.setBoxMatrix(this.outline, [tg.cell[0] + p.c[0], tg.cell[1] + p.c[1], tg.cell[2] + p.c[2]], p.axes, p.half.map((q) => (q < 0.1 ? 0 : q)), 0.006); }
       this.outline.visible = true;
     } else this.outline.visible = false;
     // 置いた場合
     this.ghost.visible = this.ghostLine.visible = false;
-    if (!buildOn || (held !== "block" && held !== "plate")) return;
+    if (!buildOn || (held !== "block" && held !== "plate" && held !== "rope")) return;
     // ささえ: プレートを置くときはブロックだけ。ブロックを置くときは、プレートも「さわれるもの」として扱う
     const sup = w.raycast(eye, dir, REACH, held === "plate");
     if (!sup) return;
@@ -59,6 +61,15 @@ export class BuildTool {
     if (!inRangeY(c[1])) return;
     const cur = w.get(c[0], c[1], c[2]);
     if (cur & BLOCK) return;
+    if (held === "rope") {
+      if (cur) return;   // 縄は、からっぽのセルにだけ置ける
+      this.place = { x: c[0], y: c[1], z: c[2], kind: "rope" };
+      this.setBoxMatrix(this.ghost, c, [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [RHW, 0.5, RHW], 0);
+      this.setBoxMatrix(this.ghostLine, c, [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [RHW, 0.5, RHW], 0.006);
+      this.ghost.visible = this.ghostLine.visible = true;
+      return;
+    }
+    if (cur & ROPE) return;   // 縄があるセルには、ブロックもプレートも置けない
     if (held === "block") {
       if (cur) return;   // プレートがあるセルには、ブロックは置けない
       if (body && overlaps(body, [c[0] - 0.5, c[1] - 0.5, c[2] - 0.5, c[0] + 0.5, c[1] + 0.5, c[2] + 0.5])) return;
