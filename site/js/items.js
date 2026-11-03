@@ -38,10 +38,20 @@ const ROCKET_ICON = svg(`
   <polygon points="24,37 28,45 24,42 20,45" fill="#ffa030" stroke="#c96a10" stroke-width="1"/>
   <path d="M38 8 l1.4 3 3 1.4 -3 1.4 -1.4 3 -1.4 -3 -3 -1.4 3 -1.4z" fill="#ffd84d"/>`);
 
+// 始点ブロック(緑)・終点ブロック(赤): /fill や /clone の範囲を決める目印
+const markIcon = (top, left, right, line) => svg(`
+  <polygon points="24,6 41,15 24,24 7,15" fill="${top}" stroke="${line}" stroke-width="1.6"/>
+  <polygon points="7,15 24,24 24,43 7,34" fill="${left}" stroke="${line}" stroke-width="1.6"/>
+  <polygon points="41,15 24,24 24,43 41,34" fill="${right}" stroke="${line}" stroke-width="1.6"/>`);
+const MARK_S_ICON = markIcon("#7bea7f", "#35b43d", "#27922f", "#145c1a");
+const MARK_E_ICON = markIcon("#ff8f86", "#e0453a", "#b8322a", "#6b1510");
+
 export const ITEMS = {
   bow: { name: "弓(右クリックを長押しでためて、はなす)", icon: BOW_ICON },
   book: { name: "使い方の本", icon: BOOK_ICON },
   block: { name: "白いブロック", icon: BLOCK_ICON },
   plate: { name: "白いプレート", icon: PLATE_ICON },
+  mark_s: { name: "始点ブロック(緑): 右クリックで置く", icon: MARK_S_ICON },
+  mark_e: { name: "終点ブロック(赤): 右クリックで置く", icon: MARK_E_ICON },
   rocket: { name: "ロケット花火(滑空中に右クリック / 長タップ)", icon: ROCKET_ICON },
 };

@@ -107,13 +107,18 @@ export class Room {
     const now = Date.now();
     if (now - (a.fillAt || 0) < 400) return this.send(ws, { t: "deny", why: "コマンドが続けて送られました。少し待ってください" });
     a.fillAt = now; ws.serializeAttachment(a);
-    const v = ["x1", "y1", "z1", "x2", "y2", "z2", "dx", "dy", "dz"].map((k) => Math.floor(Number(m[k])));
+    const v = ["x1", "y1", "z1", "x2", "y2", "z2", "a1", "b1", "c1", "a2", "b2", "c2"].map((k) => Math.floor(Number(m[k])));
     if (!v.every(Number.isFinite)) return;
-    const x1 = Math.min(v[0], v[3]), x2 = Math.max(v[0], v[3]), y1 = Math.min(v[1], v[4]), y2 = Math.max(v[1], v[4]), z1 = Math.min(v[2], v[5]), z2 = Math.max(v[2], v[5]);
-    const [dx, dy, dz] = [v[6], v[7], v[8]], sx = x2 - x1, sy = y2 - y1, sz = z2 - z1;
+    const lo = (p, q) => Math.min(p, q), hi = (p, q) => Math.max(p, q);
+    const x1 = lo(v[0], v[3]), x2 = hi(v[0], v[3]), y1 = lo(v[1], v[4]), y2 = hi(v[1], v[4]), z1 = lo(v[2], v[5]), z2 = hi(v[2], v[5]);
+    const dx = lo(v[6], v[9]), dy = lo(v[7], v[10]), dz = lo(v[8], v[11]);   // 貼りつけ先は、小さいほうの角から
+    const sx = x2 - x1, sy = y2 - y1, sz = z2 - z1;
+    const tx = hi(v[6], v[9]) - dx, ty = hi(v[7], v[10]) - dy, tz = hi(v[8], v[11]) - dz;
     const inW = (x, y, z) => x >= 0 && x < N && z >= 0 && z < N && inRangeY(y);
-    if (!inW(x1, y1, z1) || !inW(x2, y2, z2) || !inW(dx, dy, dz) || !inW(dx + sx, dy + sy, dz + sz)) return this.send(ws, { t: "deny", why: "世界の外です(コピー元・貼りつけ先は、世界の中におさめてください)" });
-    const vol = (sx + 1) * (sy + 1) * (sz + 1);
+    if (!inW(x1, y1, z1) || !inW(x2, y2, z2) || !inW(dx, dy, dz) || !inW(dx + tx, dy + ty, dz + tz)) return this.send(ws, { t: "deny", why: "世界の外です(コピー元・貼りつけ先は、世界の中におさめてください)" });
+    const vol = (sx + 1) * (sy + 1) * (sz + 1), vol2 = (tx + 1) * (ty + 1) * (tz + 1);
+    if (vol !== vol2) return this.send(ws, { t: "deny", why: "体積がちがいます(コピー元 " + vol + "、貼りつけ先 " + vol2 + ")" });
+    if (sx !== tx || sy !== ty || sz !== tz) return this.send(ws, { t: "deny", why: "形がちがいます(コピー元 " + (sx + 1) + "×" + (sy + 1) + "×" + (sz + 1) + "、貼りつけ先 " + (tx + 1) + "×" + (ty + 1) + "×" + (tz + 1) + ")" });
     if (vol > 32768) return this.send(ws, { t: "deny", why: "広すぎます(最大32768ブロック。今回は" + vol + ")" });
     const snap = [];   // 重なっていてもこわれないよう、先に全部読む
     for (let x = 0; x <= sx; x++) for (let y = 0; y <= sy; y++) for (let z = 0; z <= sz; z++) snap.push(this.cellValue(x1 + x, y1 + y, z1 + z));

@@ -39,7 +39,7 @@ export class Net {
   sendFill(c, mat) { this.send({ t: "fill", m: mat, x1: c[0], y1: c[1], z1: c[2], x2: c[3], y2: c[4], z2: c[5] }); }
   sendChat(text) { this.send({ t: "chat", text }); }
   sendHistMore(before) { this.send({ t: "histmore", before }); }
-  sendClone(c) { this.send({ t: "clone", x1: c[0], y1: c[1], z1: c[2], x2: c[3], y2: c[4], z2: c[5], dx: c[6], dy: c[7], dz: c[8] }); }
+  sendClone(c) { this.send({ t: "clone", x1: c[0], y1: c[1], z1: c[2], x2: c[3], y2: c[4], z2: c[5], a1: c[6], b1: c[7], c1: c[8], a2: c[9], b2: c[10], c2: c[11] }); }
   sendSwing() { this.send({ t: "swing" }); }
   sendHit(id, k) { this.send({ t: "hit", id, k }); }
 

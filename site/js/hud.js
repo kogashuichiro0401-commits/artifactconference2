@@ -33,6 +33,7 @@ const BOOK = `
     <li><b>マウス</b>…見る方向。<b>ホイール</b>…ズーム。<b>F5</b>…視点の切り替え(一人称/後ろ/前)</li>
     <li><b>十字の先</b>のブロック/プレートは、黒い細い枠で囲まれる</li>
     <li>(管理者だけ)<b>F4</b>…建築破壊モード。<b>左クリック</b>=壊す、<b>右クリック</b>=置く(白いブロック/プレートを持っているとき)。プレートは、目線に垂直な向きのものが薄く表示されて置かれる。<b>C</b>…プレートの置き方(自動/面だけ/斜めだけ)</li>
+    <li>(管理者だけ)<b>/fill block</b> や <b>/fill air</b>(座標なし)で、緑の始点ブロックがホットバーの9番に出る。右クリックで置くと赤の終点ブロックになり、それも置くと、はさんだ範囲が埋まる(置いたブロックは左クリックでこわして、置きなおせる)。<b>/clone</b>(座標なし)は、緑→赤でコピー元、緑→赤で貼りつけ先。<b>/clone x1 y1 z1 x2 y2 z2 x3 y3 z3 x4 y4 z4</b> と座標で書いてもよい(体積が同じであること)。<b>/fill cancel</b> で取り消し</li>
     <li><b>F3</b>…座標などの情報。世界は49×49×49(座標は0〜48)で、はしは反対側につながっている(上下も)</li>
     <li><b>1〜9</b>…手に持つものを変える。<b>E</b>…持ち物。<b>Esc</b>…メニュー</li>
   </ul>`;
@@ -228,6 +229,8 @@ export function createHud({ settings, onSettings, onEnter, onClose, onLogin, onL
     renderLogin,
     showChecking,
     // 管理者だけ、白いブロック・プレートを持てる
+    // 始点/終点ブロックは、ホットバーのいちばん右(9番)だけを使う。null で消す
+    setMarker: (id) => { const had = inv[8]; inv[8] = id; renderHotbar(); if (id && id !== had) select(8); else if (!id && sel === 8) select(0); else select(sel); },
     setAdmin: (a) => { setItems(a); renderHotbar(); select(sel); },
     setBuildMode: (on) => { $("mode").hidden = !on; $("mode").textContent = "建築破壊モード(F4で切り替え)"; },
     setUser: (u) => { user = u; entered = false; },

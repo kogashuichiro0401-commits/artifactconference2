@@ -9,7 +9,8 @@ import { restore, login, logout, getToken, loginGoogle, googleButton } from "./a
 import { VERSION } from "./version.js";
 import { World, buildChunk, CH } from "./world.js";
 import { BuildTool } from "./build.js";
-import { N, YMIN, YN, BLOCK, mod, wrapDelta, SUN } from "./shared.js";
+import { Marks } from "./marks.js";
+import { N, YMIN, YN, BLOCK, REACH, mod, wrapDelta, SUN } from "./shared.js";
 import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
 import { createTouch, detectTouch } from "./touch.js";
@@ -142,6 +143,9 @@ const controls = new Controls({ world, spawn: world.spawn, win: window, doc: doc
 const firstPerson = createFirstPerson(THREE, camera, scene, controls);
 const arrows = createArrows(THREE, scene, world, (a, b) => remotes.segHit(a, b), (id) => { if (net.ready()) net.sendHit(id, "arrow"); });
 const build = new BuildTool(THREE, scene, world);
+const marks = new Marks(THREE, scene);   // 始点ブロック(緑)・終点ブロック(赤)
+const syncMarkHud = () => hud.setMarker(isAdmin ? marks.held() : null);
+const holdingMark = () => !!isAdmin && !!marks.held() && hud.selectedItem() === marks.held();   // 始点/終点ブロックを手に持っている
 let isAdmin = false, buildMode = false;
 // F2〜F5の状態は、更新(再読み込み)しても引きつぐ(ブラウザに保存)
 const UKEY = "craft-ui";
@@ -211,7 +215,7 @@ hud = createHud({
     await logout();
     net.stop(); netStarted = false; remotes.clear();
     saveState(); stateUid = ""; worldReady = false; welcomed = false; loadStart = performance.now();
-    user = null; isAdmin = false; controls.canFly = false; if (touch) { touch.setAdmin(false); touch.setBuild(false); } buildMode = false; hud.setAdmin(false); hud.setBuildMode(false);
+    user = null; isAdmin = false; controls.canFly = false; if (touch) { touch.setAdmin(false); touch.setBuild(false); } buildMode = false; hud.setAdmin(false); hud.setBuildMode(false); marks.clear(); hud.setMarker(null);
     netState = "idle"; refreshOnline();
     setPanel("login");
   },
@@ -535,14 +539,40 @@ function coord(tok, base) {
   if (m) return base + (m[1] ? parseInt(m[1], 10) : 0);
   return /^-?\d+$/.test(tok) ? parseInt(tok, 10) : NaN;
 }
+// clone の、体積と形の確認。だめなら、ログに理由を出す
+function cloneCheck(c) {
+  const d = (i, j) => Math.abs(c[i] - c[j]) + 1;
+  const A = [d(0, 3), d(1, 4), d(2, 5)], B = [d(6, 9), d(7, 10), d(8, 11)];
+  const va = A[0] * A[1] * A[2], vb = B[0] * B[1] * B[2];
+  if (va !== vb) { logSys(`Error: 体積がちがいます(コピー元 ${A.join("×")} = ${va}、貼りつけ先 ${B.join("×")} = ${vb})`); return false; }
+  if (A.some((v, k) => v !== B[k])) { logSys(`Error: 形がちがいます(コピー元 ${A.join("×")}、貼りつけ先 ${B.join("×")})`); return false; }
+  return true;
+}
+// 始点・終点ブロックが全部そろった
+function finishMarks(all) {
+  const job = marks.job;
+  if (job.kind === "fill") { net.sendFill(all, job.mat); marks.clear(); }
+  else if (cloneCheck(all)) { net.sendClone(all); marks.clear(); }
+  else logSys("ブロックを左クリックでこわして置きなおすか、/clone cancel で取り消せます");
+  syncMarkHud();
+}
 function runCommand(line) {
   const a = line.trim().replace(/^\//, "").split(/\s+/).filter(Boolean);
   if (!a.length) return;
   const cmd = a[0].toLowerCase();
   logCmd("/" + a.join(" "));
   if (cmd === "fill") {
-    const usage = "Usage: /fill x1 y1 z1 x2 y2 z2 block|air   (~ = your position)";
+    const usage = "Usage: /fill x1 y1 z1 x2 y2 z2 block|air   (~ = your position)   または   /fill block|air  (緑と赤のブロックで範囲を決める)";
     if (!isAdmin) { logSys("権限がありません(管理者だけが使えるコマンドです)"); return; }
+    if (a.length === 2 && a[1].toLowerCase() === "cancel") { marks.clear(); syncMarkHud(); logSys("始点・終点ブロックを取り消しました"); return; }
+    if (a.length === 2) {
+      const mat = a[1].toLowerCase();
+      if (mat !== "block" && mat !== "air") { logSys("使えるのは block と air だけです。" + usage); return; }
+      if (!net.ready()) { logSys("オフラインのときは、使えません"); return; }
+      marks.start("fill", mat, 2); syncMarkHud();
+      logSys("緑の始点ブロックと、赤の終点ブロックを置くと、その範囲が " + mat + " になります(置いたブロックは左クリックでこわせます)");
+      return;
+    }
     if (a.length !== 8) { logSys(usage); return; }
     const mat = a[7].toLowerCase();
     if (mat !== "block" && mat !== "air") { logSys("使えるのは block と air だけです。" + usage); return; }
@@ -554,13 +584,21 @@ function runCommand(line) {
     return;
   }
   if (cmd === "clone") {
-    const usage = "Usage: /clone x1 y1 z1 x2 y2 z2 x y z   (囲んだ構造を、最後の x y z を始点にコピー。~ = your position)";
+    const usage = "Usage: /clone x1 y1 z1 x2 y2 z2 x3 y3 z3 x4 y4 z4   (コピー元の2点と、貼りつけ先の2点。体積は同じに。~ = your position)   または   /clone  (緑と赤のブロックを2組置く)";
     if (!isAdmin) { logSys("権限がありません(管理者だけが使えるコマンドです)"); return; }
-    if (a.length !== 10) { logSys(usage); return; }
+    if (a.length === 2 && a[1].toLowerCase() === "cancel") { marks.clear(); syncMarkHud(); logSys("始点・終点ブロックを取り消しました"); return; }
+    if (a.length === 1) {
+      if (!net.ready()) { logSys("オフラインのときは、使えません"); return; }
+      marks.start("clone", "", 4); syncMarkHud();
+      logSys("緑→赤でコピー元、もう一度 緑→赤で貼りつけ先を置くと、コピーします(置いたブロックは左クリックでこわせます)");
+      return;
+    }
+    if (a.length !== 13) { logSys(usage); return; }
     const p = controls.p, base = [Math.round(p.x), Math.floor(p.y + 0.5 + 1e-6), Math.round(p.z)];
-    const c = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => coord(a[i + 1], base[i % 3]));
+    const c = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => coord(a[i + 1], base[i % 3]));
     if (c.some((v) => !Number.isFinite(v))) { logSys("座標は整数か ~ で書いてください。" + usage); return; }
     if (!net.ready()) { logSys("オフラインのときは、使えません"); return; }
+    if (!cloneCheck(c)) return;
     net.sendClone(c);
     return;
   }
@@ -668,11 +706,30 @@ function useItem() {
     else hud.say("ロケット花火は、エリトラで滑空中に使えます");
   } else if (it === "book") setPanel("book");
 }
+// 置いた始点/終点ブロックを、左クリックでこわす(十字の先にあって、ほかのものより手前のとき)。こわしたら、またそれを持つ
+function tryBreakMark() {
+  if (!isAdmin || !marks.active()) return false;
+  const p = controls.p, eye = [p.x, p.y + controls.eyeH(), p.z], L = controls.lookDir();
+  const h = marks.ray(eye, L, REACH);
+  if (!h || (build.target && build.target.t < h.t)) return false;
+  marks.remove(h.i); syncMarkHud();
+  return true;
+}
 // 建築モードのクリック(0=壊す 2=置く)。手もふる
 function buildClick(button) { swingHand(); act(button); }
 // 1回だけ(クリックしたとき、長押しの最初)。送れたら、何をしたか返す
 function act(button) {
   if (!net.ready()) { hud.say("オフラインのときは、建築・破壊できません"); return null; }
+  if (button === 2 && holdingMark()) {   // 始点/終点ブロックを置く
+    if (!build.place) return null;
+    const cell = wrapCell([build.place.x, build.place.y, build.place.z]);
+    if (marks.occupied(cell)) { hud.say("そこにはもう置いてあります"); return null; }
+    const all = marks.place(cell);
+    syncMarkHud();
+    if (all) finishMarks(all);
+    return null;
+  }
+  if (button === 0 && tryBreakMark()) return null;
   if (button === 0 && build.target) {   // 左クリック = 壊す
     const t = build.target, op = t.kind === "block" ? "b-" : "p-";
     return sendEdit(op, t.cell, t.plate) ? { kind: t.kind, op, cell: t.cell.slice(), i: t.plate } : null;
@@ -708,10 +765,11 @@ window.addEventListener("mousedown", (e) => {
     if (it === "rocket") { useItem(); return; }
     if (glide) return;
     if (it === "bow") { startCharge(); return; }
-    if (buildMode && isAdmin) { buildClick(2); return; }
+    if (isAdmin && (buildMode || holdingMark())) { buildClick(2); return; }
     if (it === "book") useItem();
   } else if (e.button === 0 && !glide) {   // 左クリック: 壊す(建築モード) / なぐる
-    if (buildMode && isAdmin) buildClick(0); else attack();
+    if (!buildMode && tryBreakMark()) swingHand();
+    else if (buildMode && isAdmin) buildClick(0); else attack();
   }
 });
 window.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -770,8 +828,8 @@ if (isTouch) {
     isBow: () => hud.selectedItem() === "bow",
     bowDown: () => startCharge(),
     bowUp: (cancel) => { if (cancel) cancelCharge(); else releaseBow(); },
-    tap: () => { if (buildMode && isAdmin) buildClick(2); else attack(); },
-    longPress: () => { if (buildMode && isAdmin) buildClick(0); else useItem(); },
+    tap: () => { if (isAdmin && (buildMode || holdingMark())) buildClick(2); else attack(); },
+    longPress: () => { if (!buildMode && tryBreakMark()) swingHand(); else if (buildMode && isAdmin) buildClick(0); else useItem(); },
     menu: () => { if (panel === "menu") setPanel(null); else if (!panel) setPanel("menu"); else setPanel(null); },
     key: (code) => {   // 画面上のキーのボタン: 本物のキーを押したのと同じにする
       for (const t of ["keydown", "keyup"]) window.dispatchEvent(new KeyboardEvent(t, { code, key: code }));
@@ -819,12 +877,13 @@ function frame(t) {
   firstPerson(dt, { held: hud.selectedItem() === "bow" && !panel, charge: cf, item: panel ? null : hud.selectedItem() });
   if (hpNow < 20 && net.ready()) { regenT += dt; if (regenT >= 3) { regenT = 0; hpNow++; hud.setHealth(hpNow, false); } }
   arrows.setViewer(controls.p); arrows.update(dt);
+  marks.update(p);
   remotes.update(dt);
   if (world.dirty.size) rebuildDirty(8);
   remotes.setViewer({ x: p.x, y: p.y, z: p.z });
   const dirv = controls.lookDir(), eye = [p.x, p.y + controls.eyeH(), p.z];
   if (panel) { build.outline.visible = build.ghost.visible = build.ghostLine.visible = false; build.target = build.place = null; }
-  else build.update(eye, dirv, buildMode && isAdmin, hud.selectedItem(), [p.x - 0.3, p.y, p.z - 0.3, p.x + 0.3, p.y + controls.curH(), p.z + 0.3]);
+  else build.update(eye, dirv, isAdmin && (buildMode || holdingMark()), holdingMark() ? "block" : hud.selectedItem(), [p.x - 0.3, p.y, p.z - 0.3, p.x + 0.3, p.y + controls.curH(), p.z + 0.3]);
   const kmh = Math.hypot(p.vx, p.vy, p.vz) * 3;
   renderer.render(scene, camera);
   if (!panel) { renderSelf(p, dt); map3d.render(p, camera.fov, renderer); }
@@ -858,5 +917,5 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
+window.__craft = { runCommand, marks, arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });
