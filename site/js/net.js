@@ -95,7 +95,7 @@ export class Net {
     switch (m.t) {
       case "welcome": this.id = m.id; this.h.onWelcome(m); break;
       case "join": if (m.p && m.p.id !== this.id) this.h.onJoin(m.p); break;
-      case "leave": this.h.onLeave(m.id); break;
+      case "leave": this.h.onLeave(m.id, m.name); break;
       case "pos": if (m.id !== this.id) this.h.onPos(m); break;
       case "name": this.h.onName(m); break;
       case "edit": this.h.onEdit(m); break;

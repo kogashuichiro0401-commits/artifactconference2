@@ -338,8 +338,8 @@ const net = new Net({
     hpNow = 20; hud.setHealth(20, false);
     refreshOnline();
   },
-  onJoin: (p) => { remotes.add(p); refreshOnline(); },
-  onLeave: (id) => { remotes.remove(id); refreshOnline(); },
+  onJoin: (p) => { remotes.add(p); refreshOnline(); logSys((p.name || "だれか") + " が参加しました"); },
+  onLeave: (id, name) => { remotes.remove(id); refreshOnline(); if (name) logSys(name + " が退出しました"); },
   onPos: (m) => remotes.setPos(m),
   onArrow: (m) => arrows.shoot([m.x, m.y, m.z], [m.vx, m.vy, m.vz]),
   onFill: (m) => { for (let x = m.x1; x <= m.x2; x++) for (let y = m.y1; y <= m.y2; y++) for (let z = m.z1; z <= m.z2; z++) world.set(x, y, z, m.v ? BLOCK : 0); logSys((m.by ? m.by + " が " : "") + m.n + (m.v ? "ブロックをうめました" : "ブロックぶんを空気にしました")); },

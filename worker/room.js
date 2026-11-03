@@ -32,6 +32,8 @@ function pose(m, base) {
 const pub = (a) => ({ id: a.id, name: a.name, x: a.x, y: a.y, z: a.z, yaw: a.yaw, pitch: a.pitch, fly: a.fly, sneak: a.sneak, glide: a.glide });
 const posMsg = (a) => ({ t: "pos", id: a.id, x: a.x, y: a.y, z: a.z, yaw: a.yaw, pitch: a.pitch, fly: a.fly, sneak: a.sneak, glide: a.glide });
 
+const SWEEP_MS = 15000;     // 切れた人がいないか、見はる間隔
+const IDLE_MS = 60000;      // これだけ何も届かない人は、退出あつかい(画面からは20秒ごとに ping が届く)
 const WORLD_VER = "box49";   // 世界の作りが変わったら、ここを変える(古い建築データが消える)
 
 export class Room {
@@ -228,13 +230,14 @@ export class Room {
         try { ws.close(1000, "full"); } catch (e) { /* すでに閉じている */ }
         return;
       }
-      const me = { id: crypto.randomUUID().slice(0, 8), uid: user.uid, name: cleanName(user.name), admin: !!user.admin, ...pose(m), at: 0, hp: 20, hpAt: Date.now() };
+      const me = { id: crypto.randomUUID().slice(0, 8), uid: user.uid, name: cleanName(user.name), admin: !!user.admin, ...pose(m), at: 0, joinedAt: Date.now(), hp: 20, hpAt: Date.now() };
       ws.serializeAttachment(me);
       const edits = [];
       for (const [k, v] of this.edits) { const [ex, ey, ez] = k.split(",").map(Number); edits.push([ex, ey, ez, v]); }
       const recent = await this.chatPage(null);
       this.send(ws, { t: "welcome", chat: recent.items, chatMore: recent.more, id: me.id, name: me.name, admin: me.admin, version: VERSION, max: MAX_PLAYERS, players: list.map((p) => pub(p.a)), edits });
       this.broadcast({ t: "join", p: pub(me) }, ws);
+      this.ctx.storage.setAlarm(Date.now() + SWEEP_MS);   // 見はり開始
       return;
     }
 
@@ -294,8 +297,23 @@ export class Room {
     const a = ws.deserializeAttachment();
     if (a && a.id) {
       try { ws.serializeAttachment({}); } catch (e) { /* すでに閉じている */ }   // 二重に「退出」を送らないため
-      this.broadcast({ t: "leave", id: a.id }, ws);
+      this.broadcast({ t: "leave", id: a.id, name: a.name }, ws);
     }
+  }
+
+  // 通信が切れたまま残った人(ログアウト・タブを閉じた・電波切れ)を、時間がたったら消す
+  async alarm() {
+    const now = Date.now();
+    let alive = 0;
+    for (const { ws, a } of this.players()) {
+      let last = Math.max(a.joinedAt || 0, a.at || 0);
+      try { const t = this.ctx.getWebSocketAutoResponseTimestamp(ws); if (t) last = Math.max(last, t.getTime()); } catch (e) { /* なければ無視 */ }
+      if (now - last > IDLE_MS) {
+        this.drop(ws);
+        try { ws.close(1000, "timeout"); } catch (e) { /* すでに閉じている */ }
+      } else alive++;
+    }
+    if (alive > 0) this.ctx.storage.setAlarm(now + SWEEP_MS);
   }
 
   async webSocketClose(ws) {
