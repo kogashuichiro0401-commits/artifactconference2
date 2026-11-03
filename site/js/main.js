@@ -5,11 +5,12 @@ import { Net } from "./net.js";
 import { RemotePlayers, createAvatar } from "./players.js";
 import { createFirstPerson } from "./fp.js";
 import { createArrows } from "./arrows.js";
-import { restore, login, logout, getToken, loginGoogle, googleButton } from "./auth.js";
+import { restore, login, logout, getToken, loginGoogle, googleButton, api as siteApi } from "./auth.js";
 import { VERSION } from "./version.js";
 import { World, buildChunk, CH } from "./world.js";
 import { BuildTool } from "./build.js";
 import { Marks } from "./marks.js";
+import { createDisplay } from "./display.js";
 import { N, YMIN, YN, BLOCK, REACH, mod, wrapDelta, SUN } from "./shared.js";
 import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
@@ -143,6 +144,7 @@ const controls = new Controls({ world, spawn: world.spawn, win: window, doc: doc
 const firstPerson = createFirstPerson(THREE, camera, scene, controls);
 const arrows = createArrows(THREE, scene, world, (a, b) => remotes.segHit(a, b), (id) => { if (net.ready()) net.sendHit(id, "arrow"); });
 const build = new BuildTool(THREE, scene, world);
+const display = createDisplay(THREE, scene, { api: siteApi, getToken });   // 壁の大きなディスプレイ(ダッシュボード)
 const marks = new Marks(THREE, scene);   // 始点ブロック(緑)・終点ブロック(赤)
 const syncMarkHud = () => hud.setMarker(isAdmin ? marks.held() : null);
 const holdingMark = () => !!isAdmin && !!marks.held() && hud.selectedItem() === marks.held();   // 始点/終点ブロックを手に持っている
@@ -878,6 +880,7 @@ function frame(t) {
   if (hpNow < 20 && net.ready()) { regenT += dt; if (regenT >= 3) { regenT = 0; hpNow++; hud.setHealth(hpNow, false); } }
   arrows.setViewer(controls.p); arrows.update(dt);
   marks.update(p);
+  display.update(dt, !!user && worldReady);
   remotes.update(dt);
   if (world.dirty.size) rebuildDirty(8);
   remotes.setViewer({ x: p.x, y: p.y, z: p.z });
@@ -917,5 +920,5 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { runCommand, marks, arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
+window.__craft = { display, runCommand, marks, arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });
