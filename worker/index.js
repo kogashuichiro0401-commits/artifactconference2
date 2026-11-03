@@ -4,7 +4,7 @@ import { callSite } from "./site.js";
 export { Room } from "./room.js";
 
 // ゲームから使ってよい、artifact学会の操作。ここにないものは通さない(書き込み系は通さない)
-const ALLOW = new Set(["login", "logout", "me", "list", "listTweets", "getGoogleConfig", "loginGoogle"]);
+const ALLOW = new Set(["login", "logout", "me", "list", "listTweets", "getGoogleConfig", "loginGoogle", "getThumbs"]);
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -19,6 +19,7 @@ async function api(request, env) {
   const clean = { action: p.action };
   for (const k of ["username", "password", "token"]) if (typeof p[k] === "string") clean[k] = p[k].slice(0, 300);
   if (p.action === "loginGoogle" && typeof p.credential === "string") clean.credential = p.credential.slice(0, 4100);   // Googleの確認用の証明書(IDトークン)
+  if (p.action === "getThumbs" && Array.isArray(p.ids)) clean.ids = p.ids.filter((x) => typeof x === "string" && x.length < 41).slice(0, 12);
   const j = await callSite(env, clean);
   if (!j) return json({ ok: false, error: "site_unavailable" }, 503);
   return json(j);

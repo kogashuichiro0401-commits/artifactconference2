@@ -1,4 +1,4 @@
-import { N, YN, wrapDelta } from "./shared.js";
+import { NX, NZ, wrapDelta } from "./shared.js";
 // プレイヤーの体(自分の三人称視点・ほかの人)。マイクラと同じ、箱でできた体。エリトラつき。
 const SHIRTS = ["#3f7fd0", "#d04f4f", "#4fb06a", "#d0a43f", "#8a5fd0", "#d06fa8", "#3fb0b0", "#e07a3f"];
 const PX = 1.8 / 32;
@@ -132,7 +132,7 @@ export class RemotePlayers {
     const e = this.map.get(m.id);
     if (!e) return;
     const c = e.cur;
-    e.tgt = { x: c.x + wrapDelta(c.x, m.x, N), y: c.y + wrapDelta(c.y, m.y, YN), z: c.z + wrapDelta(c.z, m.z, N), yaw: m.yaw, pitch: m.pitch };
+    e.tgt = { x: c.x + wrapDelta(c.x, m.x, NX), y: m.y, z: c.z + wrapDelta(c.z, m.z, NZ), yaw: m.yaw, pitch: m.pitch };
     e.flags = { fly: !!m.fly, sneak: !!m.sneak, glide: !!m.glide };
   }
   setName(id, name) {
@@ -146,7 +146,7 @@ export class RemotePlayers {
 
   // 体の箱(足もとが中心、幅0.6、高さ1.8)。ループする世界なので、基準の点にいちばん近いコピーで調べる
   boxAt(e, ref) {
-    const c = e.cur, x = ref[0] + wrapDelta(ref[0], c.x, N), y = ref[1] + wrapDelta(ref[1], c.y, YN), z = ref[2] + wrapDelta(ref[2], c.z, N);
+    const c = e.cur, x = ref[0] + wrapDelta(ref[0], c.x, NX), y = c.y, z = ref[2] + wrapDelta(ref[2], c.z, NZ);
     return [x - 0.3, y, z - 0.3, x + 0.3, y + (e.flags.sneak ? 1.5 : 1.8), z + 0.3];
   }
   // 線分 a→b が当たる最初の人。{ id, t(0〜1) } か null (pad: 箱を少し太らせる)
@@ -203,7 +203,7 @@ export class RemotePlayers {
       }
       e.av.pose({ swing: e.swing, hs: e.speed, bodyYaw: e.bodyYaw, yaw: c.yaw, pitch: c.pitch, glide: f.glide, fly: f.fly, sneak: f.sneak, air: f.fly || f.glide }, dt);
       const v = this.viewer;   // 世界はループしているので、自分にいちばん近い位置に出す
-      e.av.root.position.set(v.x + wrapDelta(v.x, c.x, N), v.y + wrapDelta(v.y, c.y, YN), v.z + wrapDelta(v.z, c.z, N));
+      e.av.root.position.set(v.x + wrapDelta(v.x, c.x, NX), c.y, v.z + wrapDelta(v.z, c.z, NZ));
       e.tag.position.y = f.sneak ? 2.0 : 2.2;
     }
   }

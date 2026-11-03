@@ -1,6 +1,6 @@
 // 始点ブロック(緑)・終点ブロック(赤): /fill や /clone の範囲を、ブロックを置いて決めるための目印。
 // 世界のブロックではなく、自分の画面だけにある目印。置いた座標を集めて、そろったらコマンドを実行する。
-import { N, YMIN, YN, mod } from "./shared.js";
+import { NX, NZ } from "./shared.js";
 
 const GREEN = 0x2ecc40, RED = 0xe0302a;
 
@@ -57,7 +57,7 @@ export class Marks {
 
   // 自分のいる所に近い側のコピーで表示する(世界はループしているため)
   near(cell, v) {
-    return [cell[0] + N * Math.round((v.x - cell[0]) / N), cell[1] + YN * Math.round((v.y - cell[1]) / YN), cell[2] + N * Math.round((v.z - cell[2]) / N)];
+    return [cell[0] + NX * Math.round((v.x - cell[0]) / NX), cell[1], cell[2] + NZ * Math.round((v.z - cell[2]) / NZ)];
   }
   update(v) {
     if (!this.job) return;

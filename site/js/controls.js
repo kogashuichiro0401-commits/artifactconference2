@@ -2,7 +2,7 @@
 //  歩く 4.32/ダッシュ 5.6/しゃがみ 1.31、ジャンプ 9・重力 32、飛行 10.9(ダッシュ 21)、
 //  落下中にSpaceでエリトラ(1tick=0.05秒ごとの揚力・急降下で加速)、右クリックでロケット花火、
 //  F5で視点切り替え、ホイールでズーム(視野角をせまく)、視点移動 0.0035/ズーム倍率。
-import { N, YMIN, YN } from "./shared.js";
+import { NX, NZ, YMIN } from "./shared.js";
 
 const HW = 0.3;               // 体の半分の幅
 const VMAX = 40;              // エリトラの最高速度
@@ -27,6 +27,7 @@ export class Controls {
     this.rocketT = 1;              // ロケットを打ったあとの手の動き
     this.swingP = 0;               // 手をふる動き(0=していない、0〜1で進む)
     this.stepSmooth = 0;           // 段差・坂をのぼりおりしたぶんの、見た目のずれ(なめらかに0にもどす)
+    this.riding = false;           // リフトに乗っている(Spaceは、ジャンプではなく上昇)
     this.kbT = 0;                  // ノックバックで、ふき飛ばされている残り時間
     this.p = { zm: 1, zt: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, ground: false, glide: false, boost: 0, fly: false, sprint: false, sneak: false, view: 0, fov: 70, bodyYaw: 0, t: 0 };
     this.respawn();
@@ -182,7 +183,7 @@ export class Controls {
     } else {
       p.vy = Math.max(-78, p.vy - 32 * dt);
       if (this.onRope) { if (keys.Space) { p.vy = 4.5; p.ground = false; } else p.vy = Math.max(p.vy, -3); }
-      else if (keys.Space && p.ground) { p.vy = 9; p.ground = false; }
+      else if (keys.Space && p.ground && !this.riding) { p.vy = 9; p.ground = false; }
     }
     if (gv) this.glideTick(dt, gv);
     const h = this.curH(), nx = p.x + p.vx * dt;
@@ -211,9 +212,9 @@ export class Controls {
     this.stepSmooth *= Math.exp(-dt * 9);
     if (Math.abs(this.stepSmooth) < 0.002) this.stepSmooth = 0;
     // 世界はループ: はしを越えたら、反対がわから出る(上下も)
-    if (p.x >= N - 0.5) p.x -= N; else if (p.x < -0.5) p.x += N;
-    if (p.z >= N - 0.5) p.z -= N; else if (p.z < -0.5) p.z += N;
-    if (p.y < YMIN - 0.5) p.y += YN; else if (p.y >= YMIN + YN - 0.5) p.y -= YN;
+    if (p.x >= NX - 0.5) p.x -= NX; else if (p.x < -0.5) p.x += NX;
+    if (p.z >= NZ - 0.5) p.z -= NZ; else if (p.z < -0.5) p.z += NZ;
+    if (p.y < YMIN - 20) { p.y = YMIN + 0.5; p.vy = 0; }   // 世界の底をぬけたら、床の上にもどす
     if (p.glide && p.ground) { p.glide = false; p.boost = 0; }
     if (p.fly && p.ground && keys.Shift) p.fly = false;
     // 体の向き(三人称視点で見える)

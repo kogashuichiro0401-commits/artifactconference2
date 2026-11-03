@@ -7,11 +7,11 @@ import { createFirstPerson } from "./fp.js";
 import { createArrows } from "./arrows.js";
 import { restore, login, logout, getToken, loginGoogle, googleButton, api as siteApi } from "./auth.js";
 import { VERSION } from "./version.js";
-import { World, buildChunk, CH } from "./world.js";
+import { World, buildChunk, CH, NCX, NCZ } from "./world.js";
 import { BuildTool } from "./build.js";
 import { Marks } from "./marks.js";
-import { createDisplay } from "./display.js";
-import { N, YMIN, YN, BLOCK, REACH, mod, wrapDelta, SUN } from "./shared.js";
+import { createHall } from "./hall.js";
+import { NX, NZ, YMIN, YN, BLOCK, REACH, SPAWN, mod, wrapDelta, SUN } from "./shared.js";
 import { createMinimap } from "./minimap.js";
 import { PLATE_NAMES } from "./plates.js";
 import { createTouch, detectTouch } from "./touch.js";
@@ -38,23 +38,25 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
 scene.fog = new THREE.Fog(SKY, 70, 190);
-// 世界(49x49x49)のはしを、青い枠で示す
+// 世界のはしを、青い枠で示す
 {
-  const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(N, YN, N));
+  const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(NX, YN, NZ));
   const fr = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1f6bff, fog: false }));
-  fr.position.set(N / 2 - 0.5, YMIN + YN / 2 - 0.5, N / 2 - 0.5);
+  fr.position.set(NX / 2 - 0.5, YMIN + YN / 2 - 0.5, NZ / 2 - 0.5);
   scene.add(fr);
 }
 // F2: 16ブロックごとの区切り(16×16×16の箱)
 const chunkGrid = (() => {
-  const v = [], x0 = -0.5, y0 = YMIN - 0.5, z0 = -0.5, S = 16, pos = [];
-  for (let k = 0; k < N; k += S) pos.push(k);
-  pos.push(N);   // 16ごとの区切り。さいごのはんぱな区画のはしも
-  for (const a of pos) for (const b of pos) {
-    v.push(x0, y0 + a, z0 + b, x0 + N, y0 + a, z0 + b);   // x方向
-    v.push(x0 + a, y0, z0 + b, x0 + a, y0 + YN, z0 + b);   // y方向
-    v.push(x0 + a, y0 + b, z0, x0 + a, y0 + b, z0 + N);   // z方向
-  }
+  const v = [], x0 = -0.5, y0 = YMIN - 0.5, z0 = -0.5, S = 16, px = [], pz = [], py = [];
+  for (let k = 0; k < NX; k += S) px.push(k);
+  px.push(NX);   // 16ごとの区切り。さいごのはんぱな区画のはしも
+  for (let k = 0; k < NZ; k += S) pz.push(k);
+  pz.push(NZ);
+  for (let k = 0; k < YN; k += S) py.push(k);
+  py.push(YN);
+  for (const a of py) for (const b of pz) v.push(x0, y0 + a, z0 + b, x0 + NX, y0 + a, z0 + b);   // x方向
+  for (const a of px) for (const b of pz) v.push(x0 + a, y0, z0 + b, x0 + a, y0 + YN, z0 + b);   // y方向
+  for (const a of px) for (const b of py) v.push(x0 + a, y0 + b, z0, x0 + a, y0 + b, z0 + NZ);   // z方向
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
   const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xffa51f, transparent: true, opacity: 0.85 }));
@@ -103,13 +105,12 @@ const sunSprite = (() => {
 
 // ----- 世界: ブロックとプレート。横・縦ともにループするので、まわりに27個のコピーを並べて、切れ目なく見せる -----
 const world = new World();
-world.spawn = { x: Math.floor(N / 2), y: YMIN + 0.5, z: Math.floor(N / 2), yaw: 0, pitch: 0 };
+world.spawn = { x: SPAWN.x, y: SPAWN.y, z: SPAWN.z, yaw: 0, pitch: 0 };
 const worldMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
-const NC = Math.ceil(N / CH);
 const offsets = [];
-for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) offsets.push([dx * N, dy * YN, dz * N]);
+for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) offsets.push([dx * NX, 0, dz * NZ]);
 const chunkMeshes = [];
-for (let i = 0; i < NC * NC; i++) {
+for (let i = 0; i < NCX * NCZ; i++) {
   chunkMeshes.push(offsets.map((o) => { const m = new THREE.Mesh(new THREE.BufferGeometry(), worldMat); m.position.set(o[0], o[1], o[2]); m.visible = false; scene.add(m); return m; }));
   world.dirty.add(i);
 }
@@ -118,7 +119,7 @@ function rebuildDirty(budgetMs = Infinity) {
   for (const ci of [...world.dirty]) {
     if (performance.now() - t0 > budgetMs) break;
     world.dirty.delete(ci);
-    const d = buildChunk(world, Math.floor(ci / NC), ci % NC);
+    const d = buildChunk(world, Math.floor(ci / NCZ), ci % NCZ);
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(d.pos, 3));
     g.setAttribute("color", new THREE.BufferAttribute(d.col, 3));
@@ -144,7 +145,8 @@ const controls = new Controls({ world, spawn: world.spawn, win: window, doc: doc
 const firstPerson = createFirstPerson(THREE, camera, scene, controls);
 const arrows = createArrows(THREE, scene, world, (a, b) => remotes.segHit(a, b), (id) => { if (net.ready()) net.sendHit(id, "arrow"); });
 const build = new BuildTool(THREE, scene, world);
-const display = createDisplay(THREE, scene, { api: siteApi, getToken });   // 壁の大きなディスプレイ(ダッシュボード)
+const hall = createHall(THREE, scene, { api: siteApi, getToken });   // 投稿ホール(北): 投稿の箱・リフト
+world.virtual = hall.collider;
 const marks = new Marks(THREE, scene);   // 始点ブロック(緑)・終点ブロック(赤)
 const syncMarkHud = () => hud.setMarker(isAdmin ? marks.held() : null);
 const holdingMark = () => !!isAdmin && !!marks.held() && hud.selectedItem() === marks.held();   // 始点/終点ブロックを手に持っている
@@ -238,7 +240,7 @@ function restoreState(u) {
   const num = (v, lo, hi, d) => (Number.isFinite(v) && v >= lo && v <= hi ? v : d);
   if (st && typeof st === "object") {
     const p = controls.p;
-    p.x = num(st.x, -1, N, p.x); p.y = num(st.y, YMIN - 1, YMIN + YN + 1, p.y); p.z = num(st.z, -1, N, p.z);
+    p.x = num(st.x, -1, NX, p.x); p.y = num(st.y, YMIN - 1, 2000, p.y); p.z = num(st.z, -1, NZ, p.z);
     p.yaw = num(st.yaw, -1000, 1000, p.yaw); p.pitch = num(st.pitch, -1.5707, 1.5707, p.pitch);
     p.vx = p.vy = p.vz = 0; p.ground = false; p.glide = false; p.boost = 0; p.bodyYaw = p.yaw;
     p.fly = !!st.fly && isAdmin;
@@ -672,7 +674,7 @@ document.addEventListener("pointerlockchange", () => {
 document.addEventListener("pointerlockerror", () => { if (!panel) hud.setResume(true); });
 
 canvas.addEventListener("click", () => { if (!panel && !locked) requestLock(); });
-const wrapCell = (c) => [mod(c[0], N), YMIN + mod(c[1] - YMIN, YN), mod(c[2], N)];
+const wrapCell = (c) => [mod(c[0], NX), c[1], mod(c[2], NZ)];
 // ----- 建築・破壊(クリック・長押し) -----
 let lastAct = { key: "", at: 0 };
 const sendEdit = (op, cu, i) => {   // cu: ループしていない通しの座標
@@ -862,7 +864,7 @@ function frame(t) {
   const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
   checkLoaded();
-  if (!user || worldReady) controls.update(dt);   // 読み込みのあいだは、体も動かさない
+  if (!user || worldReady) { hall.update(dt, controls, !!user && worldReady); controls.update(dt); }   // 読み込みのあいだは、体も動かさない
   controls.camera(camera, dt);
   skyDome.position.copy(camera.position);
   sunSprite.position.set(camera.position.x + SUN[0] * 270, camera.position.y + SUN[1] * 270, camera.position.z + SUN[2] * 270);
@@ -880,7 +882,6 @@ function frame(t) {
   if (hpNow < 20 && net.ready()) { regenT += dt; if (regenT >= 3) { regenT = 0; hpNow++; hud.setHealth(hpNow, false); } }
   arrows.setViewer(controls.p); arrows.update(dt);
   marks.update(p);
-  display.update(dt, !!user && worldReady);
   remotes.update(dt);
   if (world.dirty.size) rebuildDirty(8);
   remotes.setViewer({ x: p.x, y: p.y, z: p.z });
@@ -907,7 +908,7 @@ function frame(t) {
     hud.setDebug([
       `artifact学会。 3D v${VERSION}   ${fps.toFixed(0)} fps`,
       `XYZ: ${p.x.toFixed(3)} / ${(p.y + 0.5).toFixed(3)} / ${p.z.toFixed(3)}   (Yは足があるブロックの高さ。ブロックの上では整数)`,
-      `ブロック: ${mod(Math.round(p.x), N)} ${Math.floor(p.y + 0.5 + 1e-6)} ${mod(Math.round(p.z), N)}   (世界 ${N}x${YN}x${N}、ループ)`,
+      `ブロック: ${mod(Math.round(p.x), NX)} ${Math.floor(p.y + 0.5 + 1e-6)} ${mod(Math.round(p.z), NZ)}   (世界 ${NX}x${NZ}、横はループ・上は空)`,
       `向き: ${face}  (yaw ${yawDeg.toFixed(1)} / pitch ${((-p.pitch * 180) / Math.PI).toFixed(1)})`,
       `見ている先: ${look}`,
       `権限: ${isAdmin ? "管理者" : "泳者"}   モード: ${buildMode ? "建築破壊" : "通常"}${buildMode ? `   プレート: ${["自動", "面だけ", "斜めだけ"][build.plateMode]}` : ""}`,
@@ -920,5 +921,5 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // 動作確認用(ブラウザの開発者ツールからのぞける)
-window.__craft = { display, runCommand, marks, arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
+window.__craft = { hall, runCommand, marks, arrows, test: { set locked(v) { locked = v; }, set buildMode(v) { buildMode = v; }, act, attack, useItem }, remotes, controls, scene, camera, hud, world, build, net, get buildMode() { return buildMode; } };
 window.__info = () => JSON.stringify({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures });

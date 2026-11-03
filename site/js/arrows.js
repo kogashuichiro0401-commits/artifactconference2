@@ -1,6 +1,6 @@
 // 矢。マイクラと同じ動き: 1tick(0.05秒)ごとに、位置 += 速度、速度 *= 0.99、速度のy -= 0.05。
 // 何かにあたったら、そこに刺さって、しばらくしたら消える。(通信では「撃った」ことだけを送り、各画面で同じように飛ばす)
-import { N, YMIN, YN, mod, wrapDelta } from "./shared.js";
+import { NX, NZ, YMIN, mod, wrapDelta } from "./shared.js";
 
 const TICK = 0.05, DRAG = 0.99, GRAV = 0.05, STUCK_LIFE = 3.0, FLY_LIFE = 12;
 
@@ -53,9 +53,9 @@ export function createArrows(T, scene, world, hitTest, onHit) {
           a.p = [a.p[0] + a.v[0], a.p[1] + a.v[1], a.p[2] + a.v[2]];
           a.v = [a.v[0] * DRAG, a.v[1] * DRAG - GRAV, a.v[2] * DRAG];
           // 世界のはしを越えたら、反対がわへ
-          for (let k = 0; k < 3; k++) {
-            const lo = k === 1 ? YMIN - 0.5 : -0.5, n = k === 1 ? YN : N;
-            if (a.p[k] >= lo + n) { a.p[k] -= n; a.q[k] -= n; } else if (a.p[k] < lo) { a.p[k] += n; a.q[k] += n; }
+          for (const k of [0, 2]) {
+            const n = k === 0 ? NX : NZ;
+            if (a.p[k] >= n - 0.5) { a.p[k] -= n; a.q[k] -= n; } else if (a.p[k] < -0.5) { a.p[k] += n; a.q[k] += n; }
           }
         }
       }
@@ -66,7 +66,7 @@ export function createArrows(T, scene, world, hitTest, onHit) {
         if (a.life <= 0) { scene.remove(a.g); list.splice(i, 1); continue; }
         // いま見ている人から見て、いちばん近い「ループのコピー」の位置に出す
         const x = a.q[0] + (a.p[0] - a.q[0]) * f, y = a.q[1] + (a.p[1] - a.q[1]) * f, z = a.q[2] + (a.p[2] - a.q[2]) * f;
-        a.g.position.set(viewer.x + wrapDelta(viewer.x, x, N), viewer.y + wrapDelta(viewer.y, y, YN), viewer.z + wrapDelta(viewer.z, z, N));
+        a.g.position.set(viewer.x + wrapDelta(viewer.x, x, NX), y, viewer.z + wrapDelta(viewer.z, z, NZ));
         if (!a.stuck || !a.dirSet) {
           _d.set(a.v[0], a.v[1], a.v[2]);
           if (_d.lengthSq() > 1e-8) { _d.normalize(); a.g.quaternion.copy(_q.setFromUnitVectors(FWD, _d)); a.dirSet = a.stuck; }
